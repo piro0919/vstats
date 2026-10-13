@@ -83,10 +83,19 @@ if CommandLine.arguments.dropFirst().first == "--dump" {
     let done = DispatchSemaphore(value: 0)
     Task.detached {
         do {
-            print((["project"] + Period.allCases.map(\.rawValue)).joined(separator: "\t"))
-            for row in Row.sorted(try await VercelClient(token: token).rows(), by: .week) {
-                let counts = Period.allCases.map { String(row.visitors[$0] ?? 0) }
-                print(([row.project.teamSlug + "/" + row.project.name] + counts).joined(separator: "\t"))
+            // 値ごとに、期間の数と前の期間からの増減（%）を並べる
+            let columns = Metric.allCases.flatMap { metric in
+                Period.allCases.map { "\(metric.rawValue).\($0.rawValue)" }
+            }
+            print((["project"] + columns).joined(separator: "\t"))
+            for row in Row.sorted(try await VercelClient(token: token).rows(), by: .week, .visitors) {
+                let cells = Metric.allCases.flatMap { metric in
+                    Period.allCases.map { period in
+                        "\(row.count(metric, period))"
+                            + (row.change(metric, period).map { " (\(Format.change($0)))" } ?? "")
+                    }
+                }
+                print(([row.project.teamSlug + "/" + row.project.name] + cells).joined(separator: "\t"))
             }
         } catch {
             print("error: \(error)")

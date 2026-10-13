@@ -58,17 +58,19 @@ enum SelfTest {
             check(last != nil && last?.next == nil, "最後のページでは続きが無い")
         }
 
-        // 訪問者数
+        // 訪問者数とページビュー。形は 2026-10-13 に観測の API が返したもの
         do {
             let json = """
-                {"series":[{"timestamp":"2026-10-06T00:00:00.000Z","dimensions":{"projectId":"p1"},"values":{"value":15}}],
-                 "summary":[{"dimensions":{"projectId":"p1"},"values":{"value":353}},
-                            {"dimensions":{"projectId":"p2"},"values":{"value":null}}]}
+                {"series":[{"timestamp":"2026-10-06T00:00:00.000Z","dimensions":{"projectId":"p1"},
+                            "values":{"visitors":15,"pageViews":30}}],
+                 "summary":[{"dimensions":{"projectId":"p1"},"values":{"visitors":357,"pageViews":629}},
+                            {"dimensions":{"projectId":"p2"},"values":{"visitors":null,"pageViews":null}}]}
                 """
-            let visitors = try? VercelClient.parseVisitors(Data(json.utf8))
-            check(visitors?["p1"] == 353, "期間全体の数は summary から読む")
-            check(visitors?["p2"] == 0, "値が無ければ 0")
-            check(visitors?["p3"] == nil, "訪問の無いプロジェクトは載らない")
+            let counts = try? VercelClient.parseCounts(Data(json.utf8))
+            check(counts?["p1"]?[.visitors] == 357, "期間全体の訪問者数は summary から読む")
+            check(counts?["p1"]?[.pageViews] == 629, "ページビューも同じ行から読む")
+            check(counts?["p2"]?[.visitors] == 0, "値が無ければ 0")
+            check(counts?["p3"] == nil, "訪問の無いプロジェクトは載らない")
         }
 
         // 観測の API に送る問い合わせ
@@ -82,7 +84,9 @@ enum SelfTest {
             check(query?.timeRange.start == "2026-10-05T15:00:00.000Z", "窓の両端をそのまま渡す")
             check(query?.bucketSeconds == 10_800, "区切りを渡す")
             check(query?.seriesSelection.limit == 50, "系列はプロジェクトの数だけ")
-            check(query?.metrics["value"]?.dimensions == ["visitorId"], "訪問者は visitorId の数で数える")
+            check(query?.metrics["visitors"]?.dimensions == ["visitorId"], "訪問者は visitorId の数で数える")
+            check(query?.metrics["pageViews"]?.aggregation == "count", "ページビューは回数を数える")
+            check(query?.outputs == ["visitors", "pageViews"], "2つの値を1回で聞く")
             check(query?.filter == "environment:production", "本番だけを数える")
             let quarter = DateInterval(start: iso("2026-07-14T15:00:00Z"), end: iso("2026-10-13T15:00:00Z"))
             let split = VercelClient.metricsQueries(owner: "team_a", projects: ids, interval: quarter, bucket: 10_800)
@@ -106,6 +110,20 @@ enum SelfTest {
             check(.day, "2026-10-12T03:00:00Z", "2026-10-13T03:00:00Z")
             check(.week, "2026-10-05T15:00:00Z", "2026-10-13T15:00:00Z")
             check(.month, "2026-09-12T15:00:00Z", "2026-10-13T15:00:00Z")
+            func previous(_ period: Period, _ start: String, _ end: String) {
+                Self.check(
+                    period.previous(now: now, calendar: tokyo) == DateInterval(start: iso(start), end: iso(end)),
+                    "\(period.rawValue) の前の窓")
+            }
+            previous(.day, "2026-10-11T03:00:00Z", "2026-10-12T03:00:00Z")
+            previous(.week, "2026-09-28T15:00:00Z", "2026-10-06T15:00:00Z")
+            previous(.month, "2026-08-13T15:00:00Z", "2026-09-13T15:00:00Z")
+            Self.check(Period.allCases.filter { !$0.comparable } == [.quarter], "比べられないのは3か月だけ")
+            Self.check(
+                Period.allCases.filter(\.comparable).allSatisfy {
+                    $0.previous(now: now, calendar: tokyo).start >= now.addingTimeInterval(-92 * 86_400)
+                },
+                "前の窓も観測の API が聞ける 92 日に収まる")
             let quarter = Period.quarter.current(now: now, calendar: tokyo)
             Self.check(quarter.end == iso("2026-10-13T15:00:00Z"), "3か月も今日の終わりまで")
             Self.check(quarter.duration <= 92 * 86_400, "3か月は観測の API が聞ける 92 日に収める")
@@ -118,17 +136,31 @@ enum SelfTest {
             Self.check(Period.week.bucketSeconds(calendar: utc, at: now) == 86_400, "UTC なら1日")
         }
 
-        // 並び順
+        // 並び順と増減の率
         do {
-            func row(_ name: String, week: Int, day: Int = 0) -> Row {
+            func row(_ name: String, week: Int, day: Int = 0, views: Int = 0) -> Row {
                 Row(
                     project: Project(id: name, name: name, teamID: "t", teamSlug: "s", domain: nil),
-                    visitors: [.day: day, .week: week])
+                    counts: [.visitors: [.day: day, .week: week], .pageViews: [.week: views]], previous: [:])
             }
-            let rows = [row("b", week: 3, day: 9), row("c", week: 10), row("a", week: 3), row("d", week: 0, day: 1)]
+            let rows = [
+                row("b", week: 3, day: 9), row("c", week: 10), row("a", week: 3, views: 50), row("d", week: 0, day: 1),
+            ]
             check(
-                Row.sorted(rows, by: .week).map(\.project.name) == ["c", "a", "b", "d"], "選んだ期間の多い順、同じなら名前の順")
-            check(Row.sorted(rows, by: .day).map(\.project.name) == ["b", "d", "a", "c"], "期間を変えると並びも変わる")
+                Row.sorted(rows, by: .week, .visitors).map(\.project.name) == ["c", "a", "b", "d"],
+                "選んだ期間の多い順、同じなら名前の順")
+            check(
+                Row.sorted(rows, by: .day, .visitors).map(\.project.name) == ["b", "d", "a", "c"], "期間を変えると並びも変わる")
+            check(Row.sorted(rows, by: .week, .pageViews).first?.project.name == "a", "ページビューでも並べられる")
+
+            // koidamashii の7日は、画面で 357 人・+136%（前の期間は 151 人）だった
+            let koi = Row(
+                project: Project(id: "k", name: "koidamashii", teamID: "t", teamSlug: "s", domain: nil),
+                counts: [.visitors: [.week: 357, .quarter: 526]], previous: [.visitors: [.week: 151, .day: 0]])
+            check(koi.change(.visitors, .week) == 136, "前の期間からの増減の率")
+            check(koi.change(.visitors, .quarter) == nil, "前の期間が無ければ率は出さない")
+            check(koi.change(.visitors, .day) == nil, "前の期間が 0 なら率は出さない")
+            check(Format.change(136) == "+136%" && Format.change(-98) == "-98%", "率には符号を付ける")
         }
 
         // 前回の数字
@@ -140,7 +172,8 @@ enum SelfTest {
 
             let row = Row(
                 project: Project(id: "p", name: "kk-web", teamID: "t", teamSlug: "kkweb", domain: "kkweb.io"),
-                visitors: [.day: 27, .week: 131, .month: 424, .quarter: 1313])
+                counts: [.visitors: [.day: 27, .week: 131], .pageViews: [.week: 476]],
+                previous: [.visitors: [.week: 117]])
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let decoder = JSONDecoder()

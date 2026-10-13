@@ -1,18 +1,28 @@
 import AppKit
 import SwiftUI
 
-/// 一覧の1行の中身。4つの期間の訪問者数を持つ
+/// 一覧の1行の中身。4つの期間の訪問者数とページビュー、比べる相手の前の期間の数を持つ
 struct Row: Identifiable, Equatable, Codable, Sendable {
     let project: Project
-    let visitors: [Period: Int]
+    let counts: [Metric: [Period: Int]]
+    /// 前の期間の数。3か月は取れないので入らない
+    let previous: [Metric: [Period: Int]]
 
     var id: String { project.id }
 
-    /// 選んだ期間の訪問者の多い順。同じ数なら名前の順
-    static func sorted(_ rows: [Row], by period: Period) -> [Row] {
+    func count(_ metric: Metric, _ period: Period) -> Int { counts[metric]?[period] ?? 0 }
+
+    /// 前の期間からの増減の率（%）。Vercel の画面の「+136%」と同じ。前の期間が無いか 0 なら nil
+    func change(_ metric: Metric, _ period: Period) -> Int? {
+        guard let before = previous[metric]?[period], before > 0 else { return nil }
+        return Int((Double(count(metric, period) - before) / Double(before) * 100).rounded())
+    }
+
+    /// 選んだ値と期間の多い順。同じ数なら名前の順
+    static func sorted(_ rows: [Row], by period: Period, _ metric: Metric) -> [Row] {
         rows.sorted {
-            let a = $0.visitors[period] ?? 0
-            let b = $1.visitors[period] ?? 0
+            let a = $0.count(metric, period)
+            let b = $1.count(metric, period)
             return a != b ? a > b : $0.project.name.localizedStandardCompare($1.project.name) == .orderedAscending
         }
     }
@@ -34,9 +44,12 @@ final class Model: ObservableObject {
     @Published var sort = Period.sorted {
         didSet { Period.sorted = sort }
     }
+    @Published var metric = Metric.chosen {
+        didSet { Metric.chosen = metric }
+    }
     private var task: Task<Void, Never>?
 
-    var rows: [Row] { Row.sorted(snapshot?.rows ?? [], by: sort) }
+    var rows: [Row] { Row.sorted(snapshot?.rows ?? [], by: sort, metric) }
 
     func save(token: String) {
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -103,7 +116,16 @@ struct MainView: View {
                     TokenForm(rejected: rejected, save: model.save(token:))
                 } else {
                     Header(title: Strings.projects, subtitle: subtitle) {
-                        if model.state == .loading { ProgressView().controlSize(.small) }
+                        HStack(spacing: 10) {
+                            if model.state == .loading { ProgressView().controlSize(.small) }
+                            // Vercel の画面の上に並ぶ Visitors と Page Views の切り替え
+                            Picker("", selection: $model.metric) {
+                                ForEach(Metric.allCases) { Text($0.label).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .fixedSize()
+                        }
                     }
                     list
                 }
@@ -126,7 +148,7 @@ struct MainView: View {
                     ColumnHeader(sort: $model.sort)
                     ForEach(model.rows) { row in
                         Divider()
-                        ProjectRow(row: row, sort: model.sort)
+                        ProjectRow(row: row, sort: model.sort, metric: model.metric)
                     }
                 }
             }

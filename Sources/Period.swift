@@ -62,6 +62,16 @@ enum Period: String, CaseIterable, Identifiable, Codable, Sendable {
         return DateInterval(start: start, end: window.end)
     }
 
+    /// 前の期間と比べられるか。観測の API は 92 日前より古い時刻を聞けないので、3か月の前の期間は取れない
+    var comparable: Bool { self != .quarter }
+
+    /// 比べる相手の窓。広げる前の窓のすぐ前の同じ長さを、同じように広げる。
+    /// 日単位の期間では今の窓と1日重なる（Vercel の画面がそう数えている）
+    func previous(now: Date, calendar: Calendar = .current) -> DateInterval {
+        let (from, to) = raw(now: now, calendar: calendar)
+        return widen(from.addingTimeInterval(-to.timeIntervalSince(from)), from, calendar: calendar)
+    }
+
     /// 問い合わせの区切りの長さ。日単位の期間は、利用者の暦の0時にそろう、なるべく長い区切りにする。
     /// 区切りが UTC の0時から数えられるので、日単位（86400）のままだと日本では9時間ずれて数が増える
     func bucketSeconds(calendar: Calendar = .current, at date: Date) -> Int {

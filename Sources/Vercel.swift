@@ -105,41 +105,57 @@ struct VercelClient: Sendable {
         let projects = try await projects()
         let teams = Dictionary(grouping: projects, by: \.teamID).values.compactMap(\.first)
             .map { Team(id: $0.teamID, slug: $0.teamSlug) }
-        let counts = try await withThrowingTaskGroup(of: (Period, [String: Int]).self) { group in
+        // 期間ごとに今の窓と、比べられる期間は前の窓も聞く
+        let windows = Period.allCases.flatMap { period in
+            [(period, false, period.current(now: now))]
+                + (period.comparable ? [(period, true, period.previous(now: now))] : [])
+        }
+        typealias Found = (period: Period, previous: Bool, counts: [String: [Metric: Int]])
+        let found = try await withThrowingTaskGroup(of: Found.self) { group in
             for team in teams {
                 let ids = projects.filter { $0.teamID == team.id }.map(\.id)
-                for period in Period.allCases {
+                for (period, previous, window) in windows {
                     group.addTask {
-                        let window = period.current(now: now)
                         let bucket = period.bucketSeconds(at: now)
-                        return (period, try await visitors(team: team, projects: ids, in: window, bucket: bucket))
+                        return (
+                            period, previous, try await counts(team: team, projects: ids, in: window, bucket: bucket)
+                        )
                     }
                 }
             }
-            var counts: [Period: [String: Int]] = [:]
-            for try await (period, visitors) in group { counts[period, default: [:]].merge(visitors) { $1 } }
-            return counts
+            return try await group.reduce(into: [Found]()) { $0.append($1) }
         }
         return projects.map { project in
-            Row(
-                project: project,
-                visitors: Dictionary(uniqueKeysWithValues: Period.allCases.map { ($0, counts[$0]?[project.id] ?? 0) }))
+            var current: [Metric: [Period: Int]] = [:]
+            var previous: [Metric: [Period: Int]] = [:]
+            for result in found {
+                for metric in Metric.allCases {
+                    let value = result.counts[project.id]?[metric] ?? 0
+                    if result.previous {
+                        previous[metric, default: [:]][result.period, default: 0] += value
+                    } else {
+                        current[metric, default: [:]][result.period, default: 0] += value
+                    }
+                }
+            }
+            return Row(project: project, counts: current, previous: previous)
         }
     }
 
-    /// チームの全プロジェクトの、期間の訪問者数（プロジェクトの id ごと）。本番の環境だけを数える。
+    /// チームの全プロジェクトの、期間の訪問者数とページビュー（プロジェクトの id ごと）。本番の環境だけを数える。
     /// Web Analytics の API（/v1/query/web-analytics）はプロジェクトごとにしか聞けず、1時間に 400 回までしか
     /// 聞けない。50 件で今と前の期間を聞くと1回の表示で 100 回になり、4回開くと止まった。
     /// `vercel metrics --all --group-by projectId` が使う観測の API なら、チーム全体を1回で数えられる
-    func visitors(team: Team, projects: [String], in interval: DateInterval, bucket: Int) async throws -> [String: Int]
+    func counts(team: Team, projects: [String], in interval: DateInterval, bucket: Int) async throws
+        -> [String: [Metric: Int]]
     {
-        var visitors: [String: Int] = [:]
+        var counts: [String: [Metric: Int]] = [:]
         for query in Self.metricsQueries(owner: team.id, projects: projects, interval: interval, bucket: bucket) {
             let body = try JSONEncoder().encode(query)
             let data = try await send("/metrics/v1", [URLQueryItem(name: "teamId", value: team.id)], body: body)
-            visitors.merge(try Self.parseVisitors(data)) { $1 }
+            counts.merge(try Self.parseCounts(data)) { $1 }
         }
-        return visitors
+        return counts
     }
 
     /// 応答の行（プロジェクトの数 × 区切りの数）がこれを超えると分けて聞く。
@@ -175,13 +191,12 @@ struct VercelClient: Sendable {
             bucketSeconds: bucket,
             groupBy: ["projectId"],
             filter: ["environment:production", filter].compactMap { $0 }.joined(separator: " AND "),
-            metrics: [
-                "value": .init(
-                    metric: "vercel.analytics.page_view.count", aggregation: "unique", dimensions: ["visitorId"])
-            ],
-            outputs: ["value"],
+            // 訪問者数とページビューを1回で聞く。出力の名前は Metric の rawValue
+            metrics: Dictionary(uniqueKeysWithValues: Metric.allCases.map { ($0.rawValue, $0.query) }),
+            outputs: Metric.allCases.map(\.rawValue),
             // 系列（プロジェクト）の数の上限。API が受け付けるのは 500 まで
-            seriesSelection: .init(limit: limit, mode: "exact", rankBy: [.init(metric: "value", direction: "desc")]))
+            seriesSelection: .init(
+                limit: limit, mode: "exact", rankBy: [.init(metric: Metric.visitors.rawValue, direction: "desc")]))
     }
 
     // MARK: - 通信
@@ -246,13 +261,16 @@ struct VercelClient: Sendable {
     }
 
     /// 期間全体の数は summary にある。訪問の無いプロジェクトは載らない
-    static func parseVisitors(_ data: Data) throws -> [String: Int] {
+    static func parseCounts(_ data: Data) throws -> [String: [Metric: Int]] {
         let page = try JSONDecoder().decode(MetricsPage.self, from: data)
-        var visitors: [String: Int] = [:]
+        var counts: [String: [Metric: Int]] = [:]
         for row in page.summary {
-            visitors[row.dimensions.projectId, default: 0] += row.values.value ?? 0
+            for metric in Metric.allCases {
+                counts[row.dimensions.projectId, default: [:]][metric, default: 0] +=
+                    (row.values[metric.rawValue] ?? nil) ?? 0
+            }
         }
-        return visitors
+        return counts
     }
 }
 
@@ -303,7 +321,7 @@ struct MetricsQuery: Encodable, Equatable {
     struct Metric: Encodable, Equatable {
         let metric: String
         let aggregation: String
-        let dimensions: [String]
+        let dimensions: [String]?
     }
     struct Rank: Encodable, Equatable {
         let metric: String
@@ -327,7 +345,7 @@ struct MetricsQuery: Encodable, Equatable {
 struct MetricsPage: Decodable {
     struct Row: Decodable {
         struct Dimensions: Decodable { let projectId: String }
-        struct Values: Decodable { let value: Int? }
+        typealias Values = [String: Int?]
         let dimensions: Dimensions
         let values: Values
     }

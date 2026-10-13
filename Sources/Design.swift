@@ -9,6 +9,7 @@ import SwiftUI
 // - 余白: 窓の縁から 28pt、見出しと枠の間は 20pt、行の左右は 16pt
 // - 行: 高さ 56pt。押せる行は、乗ったときだけ薄く塗る
 // - 列: 4つの期間の数を右寄せで並べる。並べ替えに使っている列だけ濃く、ほかは灰色
+// - 率: 数の下に小さく前の期間からの増減（Vercel の画面と同じ %）。増えたら緑、減ったら赤、出せなければ空ける
 enum Design {
     static let pagePadding: CGFloat = 28
     static let sectionSpacing: CGFloat = 20
@@ -25,6 +26,16 @@ enum Design {
 
     static let titleFont = Font.system(size: 24, weight: .bold)
     static let numberFont = Font.system(size: 17, weight: .semibold).monospacedDigit()
+    static let changeFont = Font.caption.monospacedDigit()
+
+    /// 増減の率の色。増えたら緑、減ったら赤、変わらなければ灰色
+    static func changeColor(_ change: Int?) -> Color {
+        switch change {
+        case let change? where change > 0: .green
+        case let change? where change < 0: .red
+        default: .secondary
+        }
+    }
 }
 
 /// 大きな見出しと、灰色の1行。右に操作を置く
@@ -108,6 +119,7 @@ struct ColumnHeader: View {
 struct ProjectRow: View {
     let row: Row
     let sort: Period
+    let metric: Metric
     @State private var hovering = false
     @State private var hoveringName = false
 
@@ -134,15 +146,26 @@ struct ProjectRow: View {
                 Button {
                     NSWorkspace.shared.open(row.project.analyticsURL(period))
                 } label: {
-                    Text(Format.number(row.visitors[period] ?? 0))
-                        .font(Design.numberFont)
-                        .foregroundStyle(period == sort ? .primary : .secondary)
-                        .frame(width: Design.columnWidth, alignment: .trailing)
-                        .frame(maxHeight: .infinity)
-                        .contentShape(Rectangle())
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(Format.number(row.count(metric, period)))
+                            .font(Design.numberFont)
+                            .foregroundStyle(period == sort ? .primary : .secondary)
+                        // 前の期間が取れない3か月や、前が 0 のときも行の高さをそろえるため、空でも置く
+                        Text(row.change(metric, period).map(Format.change) ?? " ")
+                            .font(Design.changeFont)
+                            .foregroundStyle(Design.changeColor(row.change(metric, period)))
+                    }
+                    .frame(width: Design.columnWidth, alignment: .trailing)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(period.label) \(Format.number(row.visitors[period] ?? 0))")
+                .accessibilityLabel(
+                    [
+                        period.label, Format.number(row.count(metric, period)),
+                        row.change(metric, period).map(Format.change),
+                    ]
+                    .compactMap { $0 }.joined(separator: " "))
             }
         }
         .padding(.horizontal, Design.rowPadding)

@@ -65,7 +65,7 @@ swiftc \
   -framework Sparkle \
   -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -o "$APP/Contents/MacOS/VStats" \
-  Sources/Strings.swift Sources/Format.swift Sources/Period.swift Sources/Keychain.swift Sources/Vercel.swift \
+  Sources/Strings.swift Sources/Format.swift Sources/Period.swift Sources/Metric.swift Sources/Keychain.swift Sources/Vercel.swift \
   Sources/Snapshot.swift Sources/Design.swift Sources/MainWindow.swift Sources/SettingsWindow.swift Sources/Updater.swift \
   Sources/SelfTest.swift Sources/main.swift
 
