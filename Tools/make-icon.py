@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""assets/icon-source.png から、アプリのアイコンを書き出す。作りは Owler の Tools/make-icon.py を写した。
+
+原画は ChatGPT で作った（依頼文は docs/art-prompt.md）、四隅まで塗り切った正方形。角丸と余白はここで付ける。
+
+    python3 Tools/make-icon.py
+
+書き出すもの:
+    assets/AppIcon.png       角丸と余白を付けた 1024px。README と LP でも使う
+    Resources/AppIcon.icns   アプリに入れる
+"""
+
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = ROOT / "assets" / "icon-source.png"
+RESOURCES = ROOT / "Resources"
+
+CANVAS = 1024
+# Apple の格子では、1024 の画布に 824 の本体を置き、角の半径は本体の約 22.5%
+BODY = 824
+RADIUS = 185
+
+
+def rounded_icon(source: Image.Image) -> Image.Image:
+    body = source.convert("RGBA").resize((BODY, BODY), Image.LANCZOS)
+
+    # 縁を滑らかにするため、4倍で描いてから縮める
+    scale = 4
+    mask = Image.new("L", (BODY * scale, BODY * scale), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, BODY * scale - 1, BODY * scale - 1), radius=RADIUS * scale, fill=255
+    )
+    body.putalpha(mask.resize((BODY, BODY), Image.LANCZOS))
+
+    offset = (CANVAS - BODY) // 2
+    # 他の Mac アプリと並んだとき浮いて見えないよう、下に薄い影を落とす
+    shadow = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+    shadow_body = Image.new("RGBA", (BODY, BODY), (0, 0, 0, 90))
+    shadow_body.putalpha(ImageChops.multiply(body.getchannel("A"), shadow_body.getchannel("A")))
+    shadow.paste(shadow_body, (offset, offset + 10), shadow_body)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(14))
+
+    icon = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+    icon.alpha_composite(shadow)
+    icon.alpha_composite(body, (offset, offset))
+    return icon
+
+
+def write_icns(icon: Image.Image, out: Path) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        iconset = Path(tmp) / "AppIcon.iconset"
+        iconset.mkdir()
+        for size in (16, 32, 128, 256, 512):
+            icon.resize((size, size), Image.LANCZOS).save(iconset / f"icon_{size}x{size}.png")
+            icon.resize((size * 2, size * 2), Image.LANCZOS).save(
+                iconset / f"icon_{size}x{size}@2x.png"
+            )
+        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out)], check=True)
+
+
+def main() -> None:
+    icon = rounded_icon(Image.open(SOURCE))
+    RESOURCES.mkdir(exist_ok=True)
+    icon.save(ROOT / "assets" / "AppIcon.png")
+    write_icns(icon, RESOURCES / "AppIcon.icns")
+    print("書き出しました:", ", ".join(p.name for p in sorted(RESOURCES.iterdir())))
+
+
+if __name__ == "__main__":
+    if shutil.which("iconutil") is None:
+        raise SystemExit("iconutil が見つかりません。macOS で実行してください")
+    main()

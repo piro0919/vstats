@@ -103,5 +103,10 @@ GitHub Releases に上げる。リリースノートは CHANGELOG.md のその�
 ## まだやっていないこと
 
 - 3か月の数を画面とそろえること（API の 92 日の制約で、今は無理）
-- アイコン
 - GitHub のリポジトリ、README、LP
+
+## アイコン
+
+`assets/icon-source.png` が原画。ChatGPT で作った、四隅まで塗り切った正方形で、依頼文は `docs/art-prompt.md`。
+`python3 Tools/make-icon.py` で角丸と余白を付け、`Resources/AppIcon.icns` と `assets/AppIcon.png` を書き出す。
+名前の V と Vercel の三角を掛けて、逆さの三角の中に緑の棒を3本入れた。上向きにすると Vercel の公式のロゴに見えるので逆さにしている
