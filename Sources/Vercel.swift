@@ -95,11 +95,16 @@ struct VercelClient: Sendable {
         let projects = try await projects()
         let teams = Dictionary(grouping: projects, by: \.teamID).values.compactMap(\.first)
             .map { Team(id: $0.teamID, slug: $0.teamSlug) }
+        let window = period.current(now: now)
+        let earlier = period.previous(now: now)
+        let bucket = period.bucketSeconds(at: now)
         var current: [String: Int] = [:]
         var previous: [String: Int] = [:]
         for team in teams {
-            async let latest = visitors(team: team, in: period.current(now: now))
-            async let before = period.comparable ? visitors(team: team, in: period.previous(now: now)) : [:]
+            let ids = projects.filter { $0.teamID == team.id }.map(\.id)
+            async let latest = visitors(team: team, projects: ids, in: window, bucket: bucket)
+            async let before =
+                period.comparable ? visitors(team: team, projects: ids, in: earlier, bucket: bucket) : [:]
             current.merge(try await latest) { $1 }
             previous.merge(try await before) { $1 }
         }
@@ -115,34 +120,57 @@ struct VercelClient: Sendable {
     /// Web Analytics の API（/v1/query/web-analytics）はプロジェクトごとにしか聞けず、1時間に 400 回までしか
     /// 聞けない。50 件で今と前の期間を聞くと1回の表示で 100 回になり、4回開くと止まった。
     /// `vercel metrics --all --group-by projectId` が使う観測の API なら、チーム全体を1回で数えられる
-    func visitors(team: Team, in interval: DateInterval) async throws -> [String: Int] {
-        let body = try JSONEncoder().encode(Self.metricsQuery(owner: team.id, interval: interval))
-        let data = try await send("/metrics/v1", [URLQueryItem(name: "teamId", value: team.id)], body: body)
-        return try Self.parseVisitors(data)
+    func visitors(team: Team, projects: [String], in interval: DateInterval, bucket: Int) async throws -> [String: Int]
+    {
+        var visitors: [String: Int] = [:]
+        for query in Self.metricsQueries(owner: team.id, projects: projects, interval: interval, bucket: bucket) {
+            let body = try JSONEncoder().encode(query)
+            let data = try await send("/metrics/v1", [URLQueryItem(name: "teamId", value: team.id)], body: body)
+            visitors.merge(try Self.parseVisitors(data)) { $1 }
+        }
+        return visitors
     }
 
-    /// 窓の両端は1時間に揃える。Web Analytics の API が丸めていたのと同じ揃え方
-    static func metricsQuery(owner: String, interval: DateInterval) -> MetricsQuery {
-        let hour: TimeInterval = 3600
-        let start = (interval.start.timeIntervalSince1970 / hour).rounded(.down) * hour
-        let end = (interval.end.timeIntervalSince1970 / hour).rounded(.up) * hour
+    /// 応答の行（プロジェクトの数 × 区切りの数）がこれを超えると分けて聞く。
+    /// 3か月を3時間で区切ると 728 区切りで、50 件まとめると 413（Query result is too large）が返った。25 件は通った
+    static let rowBudget = 15_000
+
+    /// 応答が大きくなりすぎるときは、プロジェクトを分けて聞く。訪問者の数は足し合わせられないので、
+    /// 期間を分けるのではなくプロジェクトを分ける
+    static func metricsQueries(owner: String, projects: [String], interval: DateInterval, bucket: Int)
+        -> [MetricsQuery]
+    {
+        let buckets = max(1, Int(interval.duration) / bucket)
+        let size = max(1, min(500, rowBudget / buckets))
+        guard projects.count > size else {
+            return [metricsQuery(owner: owner, filter: nil, limit: max(1, projects.count), interval, bucket)]
+        }
+        return stride(from: 0, to: projects.count, by: size).map {
+            let chunk = Array(projects[$0..<min($0 + size, projects.count)])
+            let filter = "projectId:(\(chunk.joined(separator: " OR ")))"
+            return metricsQuery(owner: owner, filter: filter, limit: chunk.count, interval, bucket)
+        }
+    }
+
+    /// 期間全体の数は区切りごとの数とは別に summary に入る。区切りは窓の両端にそろっていないと、
+    /// 端の区切りがはみ出して数が増える（Period.bucketSeconds）
+    static func metricsQuery(
+        owner: String, filter: String?, limit: Int, _ interval: DateInterval, _ bucket: Int
+    ) -> MetricsQuery {
         let format = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
         return MetricsQuery(
             scope: .init(ownerId: owner),
-            timeRange: .init(
-                start: Date(timeIntervalSince1970: start).formatted(format),
-                end: Date(timeIntervalSince1970: end).formatted(format)),
-            // 区切りは最大で1日。期間全体の数は区切りごとの数とは別に summary に入る
-            bucketSeconds: 86_400,
+            timeRange: .init(start: interval.start.formatted(format), end: interval.end.formatted(format)),
+            bucketSeconds: bucket,
             groupBy: ["projectId"],
-            filter: "environment:production",
+            filter: ["environment:production", filter].compactMap { $0 }.joined(separator: " AND "),
             metrics: [
                 "value": .init(
                     metric: "vercel.analytics.page_view.count", aggregation: "unique", dimensions: ["visitorId"])
             ],
             outputs: ["value"],
             // 系列（プロジェクト）の数の上限。API が受け付けるのは 500 まで
-            seriesSelection: .init(limit: 500, mode: "exact", rankBy: [.init(metric: "value", direction: "desc")]))
+            seriesSelection: .init(limit: limit, mode: "exact", rankBy: [.init(metric: "value", direction: "desc")]))
     }
 
     // MARK: - 通信

@@ -65,23 +65,53 @@ enum SelfTest {
 
         // 観測の API に送る問い合わせ
         do {
-            // 2026-10-13 02:34:56 UTC
-            let end = Date(timeIntervalSince1970: 1_791_858_896)
-            let query = VercelClient.metricsQuery(
-                owner: "team_a", interval: DateInterval(start: end.addingTimeInterval(-86_400), end: end))
-            check(query.timeRange.start == "2026-10-12T02:00:00.000Z", "始まりは1時間に切り下げる")
-            check(query.timeRange.end == "2026-10-13T03:00:00.000Z", "終わりは1時間に切り上げる")
-            check(query.metrics["value"]?.dimensions == ["visitorId"], "訪問者は visitorId の数で数える")
-            check(query.filter == "environment:production", "本番だけを数える")
+            let interval = DateInterval(start: iso("2026-10-05T15:00:00Z"), end: iso("2026-10-13T15:00:00Z"))
+            let ids = (1...50).map { "p\($0)" }
+            let queries = VercelClient.metricsQueries(
+                owner: "team_a", projects: ids, interval: interval, bucket: 10_800)
+            let query = queries.first
+            check(queries.count == 1, "7日なら1回で聞く")
+            check(query?.timeRange.start == "2026-10-05T15:00:00.000Z", "窓の両端をそのまま渡す")
+            check(query?.bucketSeconds == 10_800, "区切りを渡す")
+            check(query?.seriesSelection.limit == 50, "系列はプロジェクトの数だけ")
+            check(query?.metrics["value"]?.dimensions == ["visitorId"], "訪問者は visitorId の数で数える")
+            check(query?.filter == "environment:production", "本番だけを数える")
+            let quarter = DateInterval(start: iso("2026-07-14T15:00:00Z"), end: iso("2026-10-13T15:00:00Z"))
+            let split = VercelClient.metricsQueries(owner: "team_a", projects: ids, interval: quarter, bucket: 10_800)
+            check(split.count == 3, "3か月はプロジェクトを分けて聞く")
+            check(split.map(\.seriesSelection.limit) == [20, 20, 10], "分けた数だけ系列を取る")
+            check(
+                split.first?.filter.hasPrefix("environment:production AND projectId:(p1 OR p2 OR") == true,
+                "分けたプロジェクトで絞る")
         }
 
-        // 期間
+        // 期間。値は Vercel の画面が 2026-10-13 11:46（日本時間）に投げていた問い合わせのもの
         do {
-            let now = Date(timeIntervalSince1970: 1_000_000)
-            let current = Period.week.current(now: now)
-            let previous = Period.week.previous(now: now)
-            check(current.end == now && current.duration == 7 * 86_400, "今に向かう7日間")
-            check(previous.end == current.start && previous.duration == current.duration, "すぐ前の同じ長さ")
+            var tokyo = Calendar(identifier: .gregorian)
+            tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+            let now = iso("2026-10-13T02:46:00Z")
+            func check(_ period: Period, _ current: (String, String), _ previous: (String, String)) {
+                let a = period.current(now: now, calendar: tokyo)
+                let b = period.previous(now: now, calendar: tokyo)
+                Self.check(
+                    a == DateInterval(start: iso(current.0), end: iso(current.1)), "\(period.rawValue) の今の窓")
+                Self.check(
+                    b == DateInterval(start: iso(previous.0), end: iso(previous.1)), "\(period.rawValue) の前の窓")
+            }
+            check(
+                .day, ("2026-10-12T03:00:00Z", "2026-10-13T03:00:00Z"), ("2026-10-11T03:00:00Z", "2026-10-12T03:00:00Z")
+            )
+            check(
+                .week, ("2026-10-05T15:00:00Z", "2026-10-13T15:00:00Z"),
+                ("2026-09-28T15:00:00Z", "2026-10-06T15:00:00Z"))
+            check(
+                .month, ("2026-09-12T15:00:00Z", "2026-10-13T15:00:00Z"),
+                ("2026-08-13T15:00:00Z", "2026-09-13T15:00:00Z"))
+            Self.check(Period.day.bucketSeconds(calendar: tokyo, at: now) == 3600, "24時間は1時間で区切る")
+            Self.check(Period.week.bucketSeconds(calendar: tokyo, at: now) == 10_800, "日本では日本の0時にそろう3時間")
+            var utc = Calendar(identifier: .gregorian)
+            utc.timeZone = TimeZone(identifier: "UTC")!
+            Self.check(Period.week.bucketSeconds(calendar: utc, at: now) == 86_400, "UTC なら1日")
         }
 
         // 並び順と差
@@ -99,8 +129,12 @@ enum SelfTest {
                 previous: nil)
             check(incomparable.delta == nil, "前の期間が無ければ差も無い")
             check(Period.allCases.filter { !$0.comparable } == [.quarter], "比べられないのは3か月だけ")
+            let now = Date()
+            let oldest = now.addingTimeInterval(-92 * 86_400)
             check(
-                Period.allCases.allSatisfy { $0.seconds * ($0.comparable ? 2 : 1) <= 92 * 86_400 },
+                Period.allCases.allSatisfy {
+                    ($0.comparable ? $0.previous(now: now) : $0.current(now: now)).start >= oldest
+                },
                 "どの期間も、聞く範囲は観測の API がさかのぼれる 92 日に収まる")
 
             let ja = Locale(identifier: "ja_JP")
@@ -118,5 +152,9 @@ enum SelfTest {
             failures += 1
             print("NG: \(name)")
         }
+    }
+
+    private static func iso(_ text: String) -> Date {
+        try! Date(text, strategy: .iso8601)
     }
 }
