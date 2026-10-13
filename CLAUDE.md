@@ -115,10 +115,19 @@ GitHub Releases に上げる。リリースノートは CHANGELOG.md のその�
 ## まだやっていないこと
 
 - 3か月の数を画面とそろえること（API の 92 日の制約で、今は無理）
-- GitHub のリポジトリ、Vercel への LP の公開、Homebrew のタップ
+- LP の Vercel Web Analytics の有効化（本人が CLI で打つ。課金の付く機能なので非対話では止まる）
 
 ## アイコン
 
 `assets/icon-source.png` が原画。ChatGPT で作った、四隅まで塗り切った正方形で、依頼文は `docs/art-prompt.md`。
 `python3 Tools/make-icon.py` で角丸と余白を付け、`Resources/AppIcon.icns` と `assets/AppIcon.png` を書き出す。
 名前の V と Vercel の三角を掛けて、逆さの三角の中に緑の棒を3本入れた。上向きにすると Vercel の公式のロゴに見えるので逆さにしている
+
+## 公開まわり（2026-10-13）
+
+- GitHub `piro0919/vstats`（public、Website は vstats.kkweb.io）。保護の設定は `gh-repo-baseline.sh` で入れた
+- Homebrew `piro0919/tap/vstats`。`brew audit` はホームページが引けるまで落ちるので、LP を出してから cask をコミットした
+- LP は Vercel プロジェクト `vstats`（ルート `lp`、関数は iad1、Renovate のビルドは止める）。Cloudflare の DNS に
+  `vstats` の CNAME（Vercel 指定の宛先、プロキシなし）と `_vercel` の TXT を足した。vercel.app のドメインは外した
+- 手元の Mac が DNS の「無い」を覚えていると、反映後もしばらく引けない。`curl --resolve` で外の DNS の結果を使って確かめる
+- Notion のポートフォリオ（APPLICATION の並び順 1）と kk-web の data.json に登録済み。Search Console にサイトマップ送信済み
