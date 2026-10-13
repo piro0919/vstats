@@ -9,7 +9,12 @@ struct Project: Identifiable, Equatable, Codable, Sendable {
     /// 本番の独自ドメイン。無ければ vercel.app のもの
     let domain: String?
 
-    /// 行を押したときに開く、Vercel の Analytics の画面
+    /// 名前を押したときに開く、そのサイト。本番のドメインが無ければ nil
+    var siteURL: URL? {
+        domain.flatMap { URL(string: "https://\($0)") }
+    }
+
+    /// 数字を押したときに開く、Vercel の Analytics の画面
     var analyticsURL: URL {
         URL(string: "https://vercel.com/\(teamSlug)/\(name)/analytics")!
     }

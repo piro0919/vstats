@@ -103,41 +103,54 @@ struct ColumnHeader: View {
     }
 }
 
-/// プロジェクトの1行。名前とドメイン、4つの期間の訪問者数。押すと Vercel の画面を開く
+/// プロジェクトの1行。名前とドメイン、4つの期間の訪問者数。
+/// 名前を押すとそのサイトを、数字を押すと Vercel の Analytics の画面を開く。乗っているほうの名前に下線を引く
 struct ProjectRow: View {
     let row: Row
     let sort: Period
     @State private var hovering = false
+    @State private var hoveringName = false
 
     var body: some View {
-        Button {
-            NSWorkspace.shared.open(row.project.analyticsURL)
-        } label: {
-            HStack(spacing: Design.columnSpacing) {
+        HStack(spacing: Design.columnSpacing) {
+            Button {
+                NSWorkspace.shared.open(row.project.siteURL ?? row.project.analyticsURL)
+            } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.project.name).fontWeight(.medium).lineLimit(1)
+                    Text(row.project.name).fontWeight(.medium).lineLimit(1).underline(hoveringName)
                     if let domain = row.project.domain {
                         Text(domain).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                Spacer(minLength: 12)
-                ForEach(Period.allCases) { period in
-                    Text(Format.number(row.visitors[period] ?? 0))
-                        .font(Design.numberFont)
-                        .foregroundStyle(period == sort ? .primary : .secondary)
-                        .frame(width: Design.columnWidth, alignment: .trailing)
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, Design.rowPadding)
-            .frame(height: Design.rowHeight)
-            .contentShape(Rectangle())
-            .background(hovering ? Color.primary.opacity(0.04) : .clear)
+            .buttonStyle(.plain)
+            .onHover { hoveringName = $0 }
+            .help(row.project.siteURL?.absoluteString ?? "")
+            .accessibilityLabel(row.project.name)
+
+            Button {
+                NSWorkspace.shared.open(row.project.analyticsURL)
+            } label: {
+                HStack(spacing: Design.columnSpacing) {
+                    ForEach(Period.allCases) { period in
+                        Text(Format.number(row.visitors[period] ?? 0))
+                            .font(Design.numberFont)
+                            .foregroundStyle(period == sort ? .primary : .secondary)
+                            .frame(width: Design.columnWidth, alignment: .trailing)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                Period.allCases.map { "\($0.label) \(Format.number(row.visitors[$0] ?? 0))" }.joined(separator: ", "))
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, Design.rowPadding)
+        .frame(height: Design.rowHeight)
+        .background(hovering ? Color.primary.opacity(0.04) : .clear)
         .onHover { hovering = $0 }
-        .accessibilityLabel(
-            ([row.project.name]
-                + Period.allCases.map { "\($0.label) \(Format.number(row.visitors[$0] ?? 0))" })
-                .joined(separator: ", "))
     }
 }

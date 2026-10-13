@@ -43,6 +43,8 @@ enum SelfTest {
             check(page?.next == 42, "続きの目印を読む")
             check(page?.projects.first?.domain == "owler.kkweb.io", "本番のドメインを持つ")
             check(
+                page?.projects.first?.siteURL?.absoluteString == "https://owler.kkweb.io", "名前を押すとサイトを開く")
+            check(
                 page?.projects.first?.analyticsURL.absoluteString == "https://vercel.com/kkweb/owler/analytics",
                 "Vercel の Analytics の画面を開く")
             let last = try? VercelClient.parseProjects(
