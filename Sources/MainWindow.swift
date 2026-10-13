@@ -7,8 +7,6 @@ struct Row: Identifiable, Equatable, Codable, Sendable {
     let counts: [Metric: [Period: Int]]
     /// 前の期間の数。3か月は取れないので入らない
     let previous: [Metric: [Period: Int]]
-    /// 推移の折れ線の点。24時間は1時間ごと、ほかは1日ごと
-    var trend: [Metric: [Period: [Int]]] = [:]
 
     var id: String { project.id }
 

@@ -10,7 +10,6 @@ import SwiftUI
 // - 行: 高さ 56pt。押せる行は、乗ったときだけ薄く塗る
 // - 列: 4つの期間の数を右寄せで並べる。並べ替えに使っている列だけ濃く、ほかは灰色
 // - 率: 数の下に小さく前の期間からの増減（Vercel の画面と同じ %）。増えたら緑、減ったら赤、出せなければ空ける
-// - 推移: 名前と数の間に、並べている期間の小さな折れ線。緑の線だけで、目盛りも軸も無い
 enum Design {
     static let pagePadding: CGFloat = 28
     static let sectionSpacing: CGFloat = 20
@@ -21,9 +20,6 @@ enum Design {
     static let columnWidth: CGFloat = 72
     static let columnSpacing: CGFloat = 12
     static let headerHeight: CGFloat = 36
-    static let sparklineWidth: CGFloat = 96
-    static let sparklineHeight: CGFloat = 24
-    static let sparklineLine: CGFloat = 1.5
     static let formWidth: CGFloat = 480
     static let windowMinWidth: CGFloat = 560
     static let windowMinHeight: CGFloat = 420
@@ -31,8 +27,6 @@ enum Design {
     static let titleFont = Font.system(size: 24, weight: .bold)
     static let numberFont = Font.system(size: 17, weight: .semibold).monospacedDigit()
     static let changeFont = Font.caption.monospacedDigit()
-    /// アイコンの棒と同じ緑
-    static let accent = Color(red: 0x3d / 255, green: 0xdc / 255, blue: 0x84 / 255)
 
     /// 増減の率の色。増えたら緑、減ったら赤、変わらなければ灰色
     static func changeColor(_ change: Int?) -> Color {
@@ -148,11 +142,6 @@ struct ProjectRow: View {
             .help(row.project.siteURL?.absoluteString ?? "")
             .accessibilityLabel(row.project.name)
 
-            // 並べている期間の推移。数字の「+136%」だけでは、急に伸びたのか、じわじわ伸びたのかが分からない
-            Sparkline(values: row.trend[metric]?[sort] ?? [])
-                .frame(width: Design.sparklineWidth, height: Design.sparklineHeight)
-                .accessibilityHidden(true)
-
             ForEach(Period.allCases) { period in
                 Button {
                     NSWorkspace.shared.open(row.project.analyticsURL(period))
@@ -183,35 +172,5 @@ struct ProjectRow: View {
         .frame(height: Design.rowHeight)
         .background(hovering ? Color.primary.opacity(0.04) : .clear)
         .onHover { hovering = $0 }
-    }
-}
-
-/// 推移の小さな折れ線。目盛りも軸も無く、形だけを見せる。いちばん大きい点を上端、0 を下端にそろえる。
-/// 色はアイコンの棒と同じ緑。点が1つも無いか、すべて 0 なら下端に灰色の線だけを引く
-struct Sparkline: View {
-    let values: [Int]
-
-    var body: some View {
-        GeometryReader { geometry in
-            let peak = values.max() ?? 0
-            let inset = Design.sparklineLine / 2
-            let height = geometry.size.height - Design.sparklineLine
-            Path { path in
-                guard values.count > 1, peak > 0 else {
-                    path.move(to: CGPoint(x: 0, y: geometry.size.height - inset))
-                    path.addLine(to: CGPoint(x: geometry.size.width, y: geometry.size.height - inset))
-                    return
-                }
-                let step = geometry.size.width / CGFloat(values.count - 1)
-                for (index, value) in values.enumerated() {
-                    let point = CGPoint(
-                        x: CGFloat(index) * step, y: inset + height * (1 - CGFloat(value) / CGFloat(peak)))
-                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
-                }
-            }
-            .stroke(
-                (values.max() ?? 0) > 0 ? Design.accent : Color.secondary.opacity(0.4),
-                style: StrokeStyle(lineWidth: Design.sparklineLine, lineCap: .round, lineJoin: .round))
-        }
     }
 }

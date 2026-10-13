@@ -9,10 +9,9 @@ teams your token can see, with its visitors over the last 24 hours, 7 days, 30 d
 and 3 months side by side.
 
 Switch between **Visitors** and **Page Views** at the top right. Each number shows
-the change from the previous period, the way the dashboard does, and a small line
-chart next to the name shows how the sorted period went. Click a column header to
-sort by that period, a project's name to open the site, and a number to open the
-Vercel dashboard for that project and period.
+the change from the previous period, the way the dashboard does. Click a column
+header to sort by that period, a project's name to open the site, and a number to
+open the Vercel dashboard for that project and period.
 
 There is a page for it at [vstats.kkweb.io](https://vstats.kkweb.io).
 

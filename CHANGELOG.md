@@ -4,13 +4,6 @@ Notable changes to VStats. `release.sh` publishes the section for the version be
 its release notes, and stops if that section is missing or empty — so before releasing, rename
 `Unreleased` to `[x.y.z] - YYYY-MM-DD` and commit.
 
-## [Unreleased]
-
-### Added
-
-- Each row shows a small line chart of the sorted period, between the name and the numbers, so you
-  can tell a sudden jump from a steady climb. It uses data the app already fetched; no extra requests.
-
 ## [0.1.0] - 2026-10-13
 
 ### Added
