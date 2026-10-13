@@ -36,7 +36,10 @@ open **System Settings → Privacy & Security**, scroll to the bottom, and click
 **Open Anyway** next to the message about VStats. You only do this once.
 
 Updates arrive through Sparkle. VStats looks once at launch and only says
-something when there is one.
+something when there is one. After an update, macOS asks once for your login
+password before VStats can read its token from the Keychain; click **Always
+Allow**. The app is self-signed, so macOS treats each new build as a different
+app.
 
 ## Your token
 
