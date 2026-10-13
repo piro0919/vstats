@@ -115,7 +115,6 @@ GitHub Releases に上げる。リリースノートは CHANGELOG.md のその�
 ## まだやっていないこと
 
 - 3か月の数を画面とそろえること（API の 92 日の制約で、今は無理）
-- LP の Vercel Web Analytics の有効化（本人が CLI で打つ。課金の付く機能なので非対話では止まる）
 
 ## アイコン
 
@@ -131,3 +130,5 @@ GitHub Releases に上げる。リリースノートは CHANGELOG.md のその�
   `vstats` の CNAME（Vercel 指定の宛先、プロキシなし）と `_vercel` の TXT を足した。vercel.app のドメインは外した
 - 手元の Mac が DNS の「無い」を覚えていると、反映後もしばらく引けない。`curl --resolve` で外の DNS の結果を使って確かめる
 - Notion のポートフォリオ（APPLICATION の並び順 1）と kk-web の data.json に登録済み。Search Console にサイトマップ送信済み
+- LP の Web Analytics は本人が `npx vercel@latest project web-analytics vstats --scope kkweb` で有効にし、本番を作り直した。
+  計測のスクリプトは `/_vercel/insights/script.js`（画面の JS が差し込むので HTML には出ない）
