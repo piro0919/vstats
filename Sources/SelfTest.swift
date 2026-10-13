@@ -94,6 +94,14 @@ enum SelfTest {
             let sorted = Row.sorted([row("b", 3), row("c", 10), row("a", 3), row("d", 0)])
             check(sorted.map(\.project.name) == ["c", "a", "b", "d"], "多い順、同じなら名前の順")
             check(row("x", 5, 8).delta == -3, "差は今から前を引く")
+            let incomparable = Row(
+                project: Project(id: "y", name: "y", teamID: "t", teamSlug: "s", domain: nil), visitors: 5,
+                previous: nil)
+            check(incomparable.delta == nil, "前の期間が無ければ差も無い")
+            check(Period.allCases.filter { !$0.comparable } == [.quarter], "比べられないのは3か月だけ")
+            check(
+                Period.allCases.allSatisfy { $0.seconds * ($0.comparable ? 2 : 1) <= 92 * 86_400 },
+                "どの期間も、聞く範囲は観測の API がさかのぼれる 92 日に収まる")
 
             let ja = Locale(identifier: "ja_JP")
             check(Format.delta(12, locale: ja) == "+12", "増えたら +")

@@ -85,7 +85,9 @@ if CommandLine.arguments.dropFirst().first == "--dump" {
     Task.detached {
         do {
             for row in try await VercelClient(token: token).rows(period: period) {
-                print("\(row.project.teamSlug)/\(row.project.name)\t\(row.visitors)\t\(row.delta)")
+                print(
+                    "\(row.project.teamSlug)/\(row.project.name)\t\(row.visitors)\t\(row.delta.map(String.init) ?? "-")"
+                )
             }
         } catch {
             print("error: \(error)")

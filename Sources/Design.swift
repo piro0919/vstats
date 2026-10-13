@@ -92,9 +92,9 @@ struct ProjectRow: View {
                 }
                 Spacer(minLength: 12)
                 Text(Format.number(row.visitors)).font(Design.numberFont)
-                Text(Format.delta(row.delta) ?? "")
+                Text(row.delta.flatMap { Format.delta($0) } ?? "")
                     .font(Design.deltaFont)
-                    .foregroundStyle(row.delta > 0 ? Color.green : Color.red)
+                    .foregroundStyle((row.delta ?? 0) > 0 ? Color.green : Color.red)
                     .frame(width: Design.deltaWidth, alignment: .leading)
             }
             .padding(.horizontal, Design.rowPadding)
@@ -105,7 +105,7 @@ struct ProjectRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel(
-            [row.project.name, Format.number(row.visitors), Format.delta(row.delta)].compactMap { $0 }
+            [row.project.name, Format.number(row.visitors), row.delta.flatMap { Format.delta($0) }].compactMap { $0 }
                 .joined(separator: " "))
     }
 }

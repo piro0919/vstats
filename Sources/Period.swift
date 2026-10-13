@@ -28,9 +28,13 @@ enum Period: String, CaseIterable, Identifiable {
         case .day: Strings.t("過去24時間", "Last 24 Hours")
         case .week: Strings.t("過去7日間", "Last 7 Days")
         case .month: Strings.t("過去30日間", "Last 30 Days")
-        case .quarter: Strings.t("過去90日間", "Last 90 Days")
+        case .quarter: Strings.t("過去3か月", "Last 3 Months")
         }
     }
+
+    /// 前の期間と比べられるか。観測の API は 92 日前より古い時刻を聞けないので、3か月の前の期間は取れない。
+    /// Vercel の画面にある 12 か月と 24 か月は、今の期間すら取れないので置いていない
+    var comparable: Bool { self != .quarter }
 
     /// 今の窓
     func current(now: Date) -> DateInterval {

@@ -5,10 +5,11 @@ import SwiftUI
 struct Row: Identifiable, Equatable, Sendable {
     let project: Project
     let visitors: Int
-    let previous: Int
+    /// 前の期間の数。比べられない期間では nil
+    let previous: Int?
 
     var id: String { project.id }
-    var delta: Int { visitors - previous }
+    var delta: Int? { previous.map { visitors - $0 } }
 
     /// 訪問者の多い順。同じ数なら名前の順
     static func sorted(_ rows: [Row]) -> [Row] {

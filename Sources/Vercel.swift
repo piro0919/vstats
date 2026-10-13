@@ -99,12 +99,16 @@ struct VercelClient: Sendable {
         var previous: [String: Int] = [:]
         for team in teams {
             async let latest = visitors(team: team, in: period.current(now: now))
-            async let before = visitors(team: team, in: period.previous(now: now))
+            async let before = period.comparable ? visitors(team: team, in: period.previous(now: now)) : [:]
             current.merge(try await latest) { $1 }
             previous.merge(try await before) { $1 }
         }
         return Row.sorted(
-            projects.map { Row(project: $0, visitors: current[$0.id] ?? 0, previous: previous[$0.id] ?? 0) })
+            projects.map {
+                Row(
+                    project: $0, visitors: current[$0.id] ?? 0,
+                    previous: period.comparable ? previous[$0.id] ?? 0 : nil)
+            })
     }
 
     /// チームの全プロジェクトの、期間の訪問者数（プロジェクトの id ごと）。本番の環境だけを数える。
