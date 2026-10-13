@@ -80,14 +80,13 @@ if CommandLine.arguments.dropFirst().first == "--dump" {
         FileHandle.standardError.write(Data("no token\n".utf8))
         exit(1)
     }
-    let period = Period.chosen
     let done = DispatchSemaphore(value: 0)
     Task.detached {
         do {
-            for row in try await VercelClient(token: token).rows(period: period) {
-                print(
-                    "\(row.project.teamSlug)/\(row.project.name)\t\(row.visitors)\t\(row.delta.map(String.init) ?? "-")"
-                )
+            print((["project"] + Period.allCases.map(\.rawValue)).joined(separator: "\t"))
+            for row in Row.sorted(try await VercelClient(token: token).rows(), by: .week) {
+                let counts = Period.allCases.map { String(row.visitors[$0] ?? 0) }
+                print(([row.project.teamSlug + "/" + row.project.name] + counts).joined(separator: "\t"))
             }
         } catch {
             print("error: \(error)")

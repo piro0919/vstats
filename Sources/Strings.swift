@@ -54,10 +54,10 @@ enum Strings {
     }
 
     static var projects: String { t("プロジェクト", "Projects") }
-    static func summary(projects: Int, visitors: String) -> String {
-        t("\(projects) 件 · 訪問者 \(visitors)", "\(projects) projects · \(visitors) visitors")
+    /// 見出しの下の灰色の1行。取り直すのは1時間ごとなので、いつの数字かを添える
+    static func summary(projects: Int, fetchedAt: String) -> String {
+        t("\(projects) 件 · \(fetchedAt) 時点", "\(projects) projects · as of \(fetchedAt)")
     }
-    static var visitors: String { t("訪問者", "Visitors") }
     static var noProjects: String {
         t("Web Analytics が有効なプロジェクトはありません", "No projects with Web Analytics enabled")
     }

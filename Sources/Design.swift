@@ -8,7 +8,7 @@ import SwiftUI
 // - 角: 枠は 10pt の角丸に、区切りの色の細い線
 // - 余白: 窓の縁から 28pt、見出しと枠の間は 20pt、行の左右は 16pt
 // - 行: 高さ 56pt。押せる行は、乗ったときだけ薄く塗る
-// - 差: 増えたら緑、減ったら赤。差が無ければ何も出さない
+// - 列: 4つの期間の数を右寄せで並べる。並べ替えに使っている列だけ濃く、ほかは灰色
 enum Design {
     static let pagePadding: CGFloat = 28
     static let sectionSpacing: CGFloat = 20
@@ -16,14 +16,15 @@ enum Design {
     static let rowHeight: CGFloat = 56
     static let rowPadding: CGFloat = 16
     static let messagePadding: CGFloat = 36
-    static let deltaWidth: CGFloat = 64
+    static let columnWidth: CGFloat = 72
+    static let columnSpacing: CGFloat = 12
+    static let headerHeight: CGFloat = 36
     static let formWidth: CGFloat = 480
     static let windowMinWidth: CGFloat = 560
     static let windowMinHeight: CGFloat = 420
 
     static let titleFont = Font.system(size: 24, weight: .bold)
     static let numberFont = Font.system(size: 17, weight: .semibold).monospacedDigit()
-    static let deltaFont = Font.callout.monospacedDigit()
 }
 
 /// 大きな見出しと、灰色の1行。右に操作を置く
@@ -74,16 +75,45 @@ struct Message: View {
     }
 }
 
-/// プロジェクトの1行。名前とドメイン、訪問者数と前の期間との差。押すと Vercel の画面を開く
+/// 列の見出し。期間の名前を並べ、押すとその期間の数で並べ替える。並べている列だけ濃く、下向きの印を付ける
+struct ColumnHeader: View {
+    @Binding var sort: Period
+
+    var body: some View {
+        HStack(spacing: Design.columnSpacing) {
+            Spacer(minLength: 0)
+            ForEach(Period.allCases) { period in
+                Button {
+                    sort = period
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(period.label)
+                        if period == sort { Image(systemName: "chevron.down").font(.caption2) }
+                    }
+                    .frame(width: Design.columnWidth, alignment: .trailing)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(period == sort ? .primary : .secondary)
+            }
+        }
+        .padding(.horizontal, Design.rowPadding)
+        .frame(height: Design.headerHeight)
+    }
+}
+
+/// プロジェクトの1行。名前とドメイン、4つの期間の訪問者数。押すと Vercel の画面を開く
 struct ProjectRow: View {
     let row: Row
+    let sort: Period
     @State private var hovering = false
 
     var body: some View {
         Button {
             NSWorkspace.shared.open(row.project.analyticsURL)
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: Design.columnSpacing) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.project.name).fontWeight(.medium).lineLimit(1)
                     if let domain = row.project.domain {
@@ -91,11 +121,12 @@ struct ProjectRow: View {
                     }
                 }
                 Spacer(minLength: 12)
-                Text(Format.number(row.visitors)).font(Design.numberFont)
-                Text(row.delta.flatMap { Format.delta($0) } ?? "")
-                    .font(Design.deltaFont)
-                    .foregroundStyle((row.delta ?? 0) > 0 ? Color.green : Color.red)
-                    .frame(width: Design.deltaWidth, alignment: .leading)
+                ForEach(Period.allCases) { period in
+                    Text(Format.number(row.visitors[period] ?? 0))
+                        .font(Design.numberFont)
+                        .foregroundStyle(period == sort ? .primary : .secondary)
+                        .frame(width: Design.columnWidth, alignment: .trailing)
+                }
             }
             .padding(.horizontal, Design.rowPadding)
             .frame(height: Design.rowHeight)
@@ -105,7 +136,8 @@ struct ProjectRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel(
-            [row.project.name, Format.number(row.visitors), row.delta.flatMap { Format.delta($0) }].compactMap { $0 }
-                .joined(separator: " "))
+            ([row.project.name]
+                + Period.allCases.map { "\($0.label) \(Format.number(row.visitors[$0] ?? 0))" })
+                .joined(separator: ", "))
     }
 }

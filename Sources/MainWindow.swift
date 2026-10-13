@@ -1,27 +1,24 @@
 import AppKit
 import SwiftUI
 
-/// 一覧の1行の中身
-struct Row: Identifiable, Equatable, Sendable {
+/// 一覧の1行の中身。4つの期間の訪問者数を持つ
+struct Row: Identifiable, Equatable, Codable, Sendable {
     let project: Project
-    let visitors: Int
-    /// 前の期間の数。比べられない期間では nil
-    let previous: Int?
+    let visitors: [Period: Int]
 
     var id: String { project.id }
-    var delta: Int? { previous.map { visitors - $0 } }
 
-    /// 訪問者の多い順。同じ数なら名前の順
-    static func sorted(_ rows: [Row]) -> [Row] {
+    /// 選んだ期間の訪問者の多い順。同じ数なら名前の順
+    static func sorted(_ rows: [Row], by period: Period) -> [Row] {
         rows.sorted {
-            $0.visitors != $1.visitors
-                ? $0.visitors > $1.visitors
-                : $0.project.name.localizedStandardCompare($1.project.name) == .orderedAscending
+            let a = $0.visitors[period] ?? 0
+            let b = $1.visitors[period] ?? 0
+            return a != b ? a > b : $0.project.name.localizedStandardCompare($1.project.name) == .orderedAscending
         }
     }
 }
 
-/// 窓に出すものを集める。取り直すのは、窓を開いたときと ⌘R と期間を変えたときだけ
+/// 窓に出すものを集める。取り直すのは、開いたときに前回から1時間たっていたときと、⌘R のときだけ
 @MainActor
 final class Model: ObservableObject {
     enum State: Equatable {
@@ -32,30 +29,39 @@ final class Model: ObservableObject {
         case failed
     }
 
-    @Published private(set) var rows: [Row] = []
+    @Published private(set) var snapshot = Snapshot.load()
     @Published private(set) var state: State = .needsToken(rejected: false)
-    @Published var period = Period.chosen {
-        didSet {
-            guard period != oldValue else { return }
-            Period.chosen = period
-            reload()
-        }
+    @Published var sort = Period.sorted {
+        didSet { Period.sorted = sort }
     }
     private var task: Task<Void, Never>?
 
-    var total: Int { rows.reduce(0) { $0 + $1.visitors } }
+    var rows: [Row] { Row.sorted(snapshot?.rows ?? [], by: sort) }
 
     func save(token: String) {
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty, Keychain.save(token) else { return }
-        rows = []
         reload()
     }
 
     func tokenRemoved() {
         task?.cancel()
-        rows = []
+        Snapshot.remove()
+        snapshot = nil
         state = .needsToken(rejected: false)
+    }
+
+    /// 窓を開いたとき。前回の数字があれば出し、古ければ取り直す
+    func open() {
+        guard Keychain.effectiveToken != nil else {
+            state = .needsToken(rejected: false)
+            return
+        }
+        if let snapshot, !snapshot.isStale() {
+            state = .loaded
+        } else {
+            reload()
+        }
     }
 
     func reload() {
@@ -66,15 +72,17 @@ final class Model: ObservableObject {
         task?.cancel()
         // 取り直すあいだも前の数字は出したままにする
         state = .loading
-        let period = period
         task = Task {
             do {
-                let rows = try await VercelClient(token: token).rows(period: period)
+                let rows = try await VercelClient(token: token).rows()
                 try Task.checkCancellation()
-                self.rows = rows
+                let snapshot = Snapshot(fetchedAt: Date(), rows: rows)
+                snapshot.save()
+                self.snapshot = snapshot
                 self.state = .loaded
             } catch VercelError.invalidToken {
-                self.rows = []
+                Snapshot.remove()
+                self.snapshot = nil
                 self.state = .needsToken(rejected: true)
             } catch is CancellationError {
             } catch {
@@ -95,14 +103,7 @@ struct MainView: View {
                     TokenForm(rejected: rejected, save: model.save(token:))
                 } else {
                     Header(title: Strings.projects, subtitle: subtitle) {
-                        HStack(spacing: 10) {
-                            if model.state == .loading { ProgressView().controlSize(.small) }
-                            Picker("", selection: $model.period) {
-                                ForEach(Period.allCases) { Text($0.label).tag($0) }
-                            }
-                            .labelsHidden()
-                            .fixedSize()
-                        }
+                        if model.state == .loading { ProgressView().controlSize(.small) }
                     }
                     list
                 }
@@ -114,17 +115,18 @@ struct MainView: View {
     }
 
     private var subtitle: String? {
-        guard !model.rows.isEmpty else { return nil }
-        return Strings.summary(projects: model.rows.count, visitors: Format.number(model.total))
+        guard let snapshot = model.snapshot, !snapshot.rows.isEmpty else { return nil }
+        return Strings.summary(projects: snapshot.rows.count, fetchedAt: Format.fetchedAt(snapshot.fetchedAt))
     }
 
     @ViewBuilder private var list: some View {
         if !model.rows.isEmpty {
             Card {
                 VStack(spacing: 0) {
-                    ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
-                        if index > 0 { Divider() }
-                        ProjectRow(row: row)
+                    ColumnHeader(sort: $model.sort)
+                    ForEach(model.rows) { row in
+                        Divider()
+                        ProjectRow(row: row, sort: model.sort)
                     }
                 }
             }
@@ -195,7 +197,7 @@ final class MainWindowController {
             window.setFrameAutosaveName("Main")
             if !window.setFrameUsingName("Main") { window.center() }
             self.window = window
-            model.reload()
+            model.open()
         }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate()

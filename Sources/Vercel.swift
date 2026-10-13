@@ -1,7 +1,7 @@
 import Foundation
 
 /// 一覧の1行に出すプロジェクト
-struct Project: Identifiable, Equatable, Sendable {
+struct Project: Identifiable, Equatable, Codable, Sendable {
     let id: String
     let name: String
     let teamID: String
@@ -90,30 +90,31 @@ struct VercelClient: Sendable {
 
     // MARK: - 訪問者
 
-    /// 一覧の行。チームごとに今の期間と前の期間を1回ずつ聞く
-    func rows(period: Period, now: Date = Date()) async throws -> [Row] {
+    /// 一覧の行。チームごとに、4つの期間をまとめて聞く
+    func rows(now: Date = Date()) async throws -> [Row] {
         let projects = try await projects()
         let teams = Dictionary(grouping: projects, by: \.teamID).values.compactMap(\.first)
             .map { Team(id: $0.teamID, slug: $0.teamSlug) }
-        let window = period.current(now: now)
-        let earlier = period.previous(now: now)
-        let bucket = period.bucketSeconds(at: now)
-        var current: [String: Int] = [:]
-        var previous: [String: Int] = [:]
-        for team in teams {
-            let ids = projects.filter { $0.teamID == team.id }.map(\.id)
-            async let latest = visitors(team: team, projects: ids, in: window, bucket: bucket)
-            async let before =
-                period.comparable ? visitors(team: team, projects: ids, in: earlier, bucket: bucket) : [:]
-            current.merge(try await latest) { $1 }
-            previous.merge(try await before) { $1 }
+        let counts = try await withThrowingTaskGroup(of: (Period, [String: Int]).self) { group in
+            for team in teams {
+                let ids = projects.filter { $0.teamID == team.id }.map(\.id)
+                for period in Period.allCases {
+                    group.addTask {
+                        let window = period.current(now: now)
+                        let bucket = period.bucketSeconds(at: now)
+                        return (period, try await visitors(team: team, projects: ids, in: window, bucket: bucket))
+                    }
+                }
+            }
+            var counts: [Period: [String: Int]] = [:]
+            for try await (period, visitors) in group { counts[period, default: [:]].merge(visitors) { $1 } }
+            return counts
         }
-        return Row.sorted(
-            projects.map {
-                Row(
-                    project: $0, visitors: current[$0.id] ?? 0,
-                    previous: period.comparable ? previous[$0.id] ?? 0 : nil)
-            })
+        return projects.map { project in
+            Row(
+                project: project,
+                visitors: Dictionary(uniqueKeysWithValues: Period.allCases.map { ($0, counts[$0]?[project.id] ?? 0) }))
+        }
     }
 
     /// チームの全プロジェクトの、期間の訪問者数（プロジェクトの id ごと）。本番の環境だけを数える。

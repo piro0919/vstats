@@ -90,23 +90,19 @@ enum SelfTest {
             var tokyo = Calendar(identifier: .gregorian)
             tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
             let now = iso("2026-10-13T02:46:00Z")
-            func check(_ period: Period, _ current: (String, String), _ previous: (String, String)) {
-                let a = period.current(now: now, calendar: tokyo)
-                let b = period.previous(now: now, calendar: tokyo)
+            func check(_ period: Period, _ start: String, _ end: String) {
                 Self.check(
-                    a == DateInterval(start: iso(current.0), end: iso(current.1)), "\(period.rawValue) の今の窓")
-                Self.check(
-                    b == DateInterval(start: iso(previous.0), end: iso(previous.1)), "\(period.rawValue) の前の窓")
+                    period.current(now: now, calendar: tokyo) == DateInterval(start: iso(start), end: iso(end)),
+                    "\(period.rawValue) の窓")
             }
-            check(
-                .day, ("2026-10-12T03:00:00Z", "2026-10-13T03:00:00Z"), ("2026-10-11T03:00:00Z", "2026-10-12T03:00:00Z")
-            )
-            check(
-                .week, ("2026-10-05T15:00:00Z", "2026-10-13T15:00:00Z"),
-                ("2026-09-28T15:00:00Z", "2026-10-06T15:00:00Z"))
-            check(
-                .month, ("2026-09-12T15:00:00Z", "2026-10-13T15:00:00Z"),
-                ("2026-08-13T15:00:00Z", "2026-09-13T15:00:00Z"))
+            check(.day, "2026-10-12T03:00:00Z", "2026-10-13T03:00:00Z")
+            check(.week, "2026-10-05T15:00:00Z", "2026-10-13T15:00:00Z")
+            check(.month, "2026-09-12T15:00:00Z", "2026-10-13T15:00:00Z")
+            let quarter = Period.quarter.current(now: now, calendar: tokyo)
+            Self.check(quarter.end == iso("2026-10-13T15:00:00Z"), "3か月も今日の終わりまで")
+            Self.check(quarter.duration <= 92 * 86_400, "3か月は観測の API が聞ける 92 日に収める")
+            Self.check(
+                quarter.start >= now.addingTimeInterval(-92 * 86_400), "3か月の始まりは 92 日より前にしない")
             Self.check(Period.day.bucketSeconds(calendar: tokyo, at: now) == 3600, "24時間は1時間で区切る")
             Self.check(Period.week.bucketSeconds(calendar: tokyo, at: now) == 10_800, "日本では日本の0時にそろう3時間")
             var utc = Calendar(identifier: .gregorian)
@@ -114,33 +110,47 @@ enum SelfTest {
             Self.check(Period.week.bucketSeconds(calendar: utc, at: now) == 86_400, "UTC なら1日")
         }
 
-        // 並び順と差
+        // 並び順
         do {
-            func row(_ name: String, _ visitors: Int, _ previous: Int = 0) -> Row {
+            func row(_ name: String, week: Int, day: Int = 0) -> Row {
                 Row(
                     project: Project(id: name, name: name, teamID: "t", teamSlug: "s", domain: nil),
-                    visitors: visitors, previous: previous)
+                    visitors: [.day: day, .week: week])
             }
-            let sorted = Row.sorted([row("b", 3), row("c", 10), row("a", 3), row("d", 0)])
-            check(sorted.map(\.project.name) == ["c", "a", "b", "d"], "多い順、同じなら名前の順")
-            check(row("x", 5, 8).delta == -3, "差は今から前を引く")
-            let incomparable = Row(
-                project: Project(id: "y", name: "y", teamID: "t", teamSlug: "s", domain: nil), visitors: 5,
-                previous: nil)
-            check(incomparable.delta == nil, "前の期間が無ければ差も無い")
-            check(Period.allCases.filter { !$0.comparable } == [.quarter], "比べられないのは3か月だけ")
-            let now = Date()
-            let oldest = now.addingTimeInterval(-92 * 86_400)
+            let rows = [row("b", week: 3, day: 9), row("c", week: 10), row("a", week: 3), row("d", week: 0, day: 1)]
             check(
-                Period.allCases.allSatisfy {
-                    ($0.comparable ? $0.previous(now: now) : $0.current(now: now)).start >= oldest
-                },
-                "どの期間も、聞く範囲は観測の API がさかのぼれる 92 日に収まる")
+                Row.sorted(rows, by: .week).map(\.project.name) == ["c", "a", "b", "d"], "選んだ期間の多い順、同じなら名前の順")
+            check(Row.sorted(rows, by: .day).map(\.project.name) == ["b", "d", "a", "c"], "期間を変えると並びも変わる")
+        }
 
+        // 前回の数字
+        do {
+            let fetched = iso("2026-10-13T02:00:00Z")
+            let snapshot = Snapshot(fetchedAt: fetched, rows: [])
+            check(!snapshot.isStale(now: fetched.addingTimeInterval(59 * 60)), "1時間たつまでは取り直さない")
+            check(snapshot.isStale(now: fetched.addingTimeInterval(60 * 60)), "1時間たったら取り直す")
+
+            let row = Row(
+                project: Project(id: "p", name: "kk-web", teamID: "t", teamSlug: "kkweb", domain: "kkweb.io"),
+                visitors: [.day: 27, .week: 131, .month: 424, .quarter: 1313])
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let original = Snapshot(fetchedAt: fetched, rows: [row])
+            let restored = (try? encoder.encode(original)).flatMap { try? decoder.decode(Snapshot.self, from: $0) }
+            check(restored == original, "書いて読み戻すと同じ")
+
+            var tokyo = Calendar(identifier: .gregorian)
+            tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
             let ja = Locale(identifier: "ja_JP")
-            check(Format.delta(12, locale: ja) == "+12", "増えたら +")
-            check(Format.delta(-1234, locale: ja) == "\u{2212}1,234", "減ったらマイナス記号と桁区切り")
-            check(Format.delta(0, locale: ja) == nil, "差が無ければ出さない")
+            check(
+                Format.fetchedAt(fetched, now: fetched.addingTimeInterval(600), calendar: tokyo, locale: ja) == "11:00",
+                "今日なら時刻だけ")
+            check(
+                Format.fetchedAt(fetched, now: fetched.addingTimeInterval(86_400), calendar: tokyo, locale: ja)
+                    .hasPrefix("10月13日"),
+                "前の日なら日付も付ける")
         }
 
         print(failures == 0 ? "selftest: ok" : "selftest: \(failures) failed")

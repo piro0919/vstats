@@ -2,16 +2,17 @@ import Foundation
 
 /// 数字を数える期間。区切り方は Vercel の Analytics 画面が裏で投げている問い合わせ
 /// （/api/web-analytics/v2/overview）を写した。2026-10-13 に kk-web で、画面と同じ数になるのを確かめた
-enum Period: String, CaseIterable, Identifiable {
+enum Period: String, CaseIterable, Identifiable, Codable, Sendable {
     case day, week, month, quarter
 
     var id: String { rawValue }
 
-    private static let key = "period"
+    private static let sortKey = "sort"
 
-    static var chosen: Period {
-        get { UserDefaults.standard.string(forKey: key).flatMap(Period.init(rawValue:)) ?? .week }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    /// 一覧をどの期間の数で並べるか。列の見出しを押して変える
+    static var sorted: Period {
+        get { UserDefaults.standard.string(forKey: sortKey).flatMap(Period.init(rawValue:)) ?? .week }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: sortKey) }
     }
 
     var days: Int {
@@ -23,18 +24,16 @@ enum Period: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 列の見出し。Vercel の画面の「Last 24 Hours」などを短くしたもの。
+    /// Vercel の画面にある 12 か月と 24 か月は、観測の API が 92 日前より古い時刻を聞けないので置いていない
     var label: String {
         switch self {
-        case .day: Strings.t("過去24時間", "Last 24 Hours")
-        case .week: Strings.t("過去7日間", "Last 7 Days")
-        case .month: Strings.t("過去30日間", "Last 30 Days")
-        case .quarter: Strings.t("過去3か月", "Last 3 Months")
+        case .day: Strings.t("24時間", "24 Hours")
+        case .week: Strings.t("7日", "7 Days")
+        case .month: Strings.t("30日", "30 Days")
+        case .quarter: Strings.t("3か月", "3 Months")
         }
     }
-
-    /// 前の期間と比べられるか。観測の API は 92 日前より古い時刻を聞けないので、3か月の前の期間は取れない。
-    /// Vercel の画面にある 12 か月と 24 か月は、今の期間すら取れないので置いていない
-    var comparable: Bool { self != .quarter }
 
     /// 今の窓。
     /// - 24時間: 今の時刻を1時間に切り上げ、そこから24時間
@@ -51,12 +50,6 @@ enum Period: String, CaseIterable, Identifiable {
         let start = max(
             window.start, Date(timeIntervalSince1970: (oldest.timeIntervalSince1970 / bucket).rounded(.up) * bucket))
         return DateInterval(start: start, end: window.end)
-    }
-
-    /// 差を取る相手。広げる前の窓のすぐ前の同じ長さを、同じように広げる。日単位の期間では今の窓と1日重なる（Vercel もそう）
-    func previous(now: Date, calendar: Calendar = .current) -> DateInterval {
-        let (from, to) = raw(now: now, calendar: calendar)
-        return widen(from.addingTimeInterval(-to.timeIntervalSince(from)), from, calendar: calendar)
     }
 
     /// 問い合わせの区切りの長さ。日単位の期間は、利用者の暦の0時にそろう、なるべく長い区切りにする。

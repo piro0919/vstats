@@ -66,7 +66,7 @@ swiftc \
   -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -o "$APP/Contents/MacOS/VStats" \
   Sources/Strings.swift Sources/Format.swift Sources/Period.swift Sources/Keychain.swift Sources/Vercel.swift \
-  Sources/Design.swift Sources/MainWindow.swift Sources/SettingsWindow.swift Sources/Updater.swift \
+  Sources/Snapshot.swift Sources/Design.swift Sources/MainWindow.swift Sources/SettingsWindow.swift Sources/Updater.swift \
   Sources/SelfTest.swift Sources/main.swift
 
 # アイコンはまだ無い。できたら Resources/AppIcon.icns に置く
