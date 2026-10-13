@@ -4,7 +4,7 @@ Notable changes to VStats. `release.sh` publishes the section for the version be
 its release notes, and stops if that section is missing or empty — so before releasing, rename
 `Unreleased` to `[x.y.z] - YYYY-MM-DD` and commit.
 
-## [Unreleased]
+## [0.1.0] - 2026-10-13
 
 ### Added
 
