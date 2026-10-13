@@ -110,16 +110,15 @@ struct VercelClient: Sendable {
             [(period, false, period.current(now: now))]
                 + (period.comparable ? [(period, true, period.previous(now: now))] : [])
         }
-        typealias Found = (period: Period, previous: Bool, counts: [String: [Metric: Int]])
+        typealias Found = (period: Period, previous: Bool, window: DateInterval, bucket: Int, counts: Counts)
         let found = try await withThrowingTaskGroup(of: Found.self) { group in
             for team in teams {
                 let ids = projects.filter { $0.teamID == team.id }.map(\.id)
                 for (period, previous, window) in windows {
                     group.addTask {
                         let bucket = period.bucketSeconds(at: now)
-                        return (
-                            period, previous, try await counts(team: team, projects: ids, in: window, bucket: bucket)
-                        )
+                        let counts = try await counts(team: team, projects: ids, in: window, bucket: bucket)
+                        return (period, previous, window, bucket, counts)
                     }
                 }
             }
@@ -128,17 +127,41 @@ struct VercelClient: Sendable {
         return projects.map { project in
             var current: [Metric: [Period: Int]] = [:]
             var previous: [Metric: [Period: Int]] = [:]
+            var trend: [Metric: [Period: [Int]]] = [:]
             for result in found {
                 for metric in Metric.allCases {
-                    let value = result.counts[project.id]?[metric] ?? 0
+                    let value = result.counts.totals[project.id]?[metric] ?? 0
                     if result.previous {
                         previous[metric, default: [:]][result.period, default: 0] += value
                     } else {
                         current[metric, default: [:]][result.period, default: 0] += value
+                        // 推移は、そのプロジェクトのチームに聞いた結果からだけ作る。ほかのチームの結果には載らない
+                        if result.counts.projects.contains(project.id) {
+                            trend[metric, default: [:]][result.period] = Self.trend(
+                                result.counts.series[project.id]?[metric] ?? [:], period: result.period,
+                                window: result.window, bucket: result.bucket)
+                        }
                     }
                 }
             }
-            return Row(project: project, counts: current, previous: previous)
+            return Row(project: project, counts: current, previous: previous, trend: trend)
+        }
+    }
+
+    /// 区切りごとの数を、折れ線に描く点に並べ直す。抜けている区切りは 0。
+    /// 24時間は1時間ずつ。ほかは1日ずつに束ねる（区切りは利用者の暦の0時にそろえてあるので、日の境で切れる）。
+    /// 訪問者数は区切りごとの重なりを除いた数なので、束ねると1日の実際の訪問者より多くなる。形を見るための点で、合計には使わない
+    static func trend(_ series: [Date: Int], period: Period, window: DateInterval, bucket: Int) -> [Int] {
+        var values: [Int] = []
+        var time = window.start
+        while time < window.end {
+            values.append(series[time] ?? 0)
+            time = time.addingTimeInterval(TimeInterval(bucket))
+        }
+        guard period != .day else { return values }
+        let perDay = max(1, 86_400 / bucket)
+        return stride(from: 0, to: values.count, by: perDay).map {
+            values[$0..<min($0 + perDay, values.count)].reduce(0, +)
         }
     }
 
@@ -146,14 +169,14 @@ struct VercelClient: Sendable {
     /// Web Analytics の API（/v1/query/web-analytics）はプロジェクトごとにしか聞けず、1時間に 400 回までしか
     /// 聞けない。50 件で今と前の期間を聞くと1回の表示で 100 回になり、4回開くと止まった。
     /// `vercel metrics --all --group-by projectId` が使う観測の API なら、チーム全体を1回で数えられる
-    func counts(team: Team, projects: [String], in interval: DateInterval, bucket: Int) async throws
-        -> [String: [Metric: Int]]
-    {
-        var counts: [String: [Metric: Int]] = [:]
+    func counts(team: Team, projects: [String], in interval: DateInterval, bucket: Int) async throws -> Counts {
+        var counts = Counts(projects: Set(projects))
         for query in Self.metricsQueries(owner: team.id, projects: projects, interval: interval, bucket: bucket) {
             let body = try JSONEncoder().encode(query)
             let data = try await send("/metrics/v1", [URLQueryItem(name: "teamId", value: team.id)], body: body)
-            counts.merge(try Self.parseCounts(data)) { $1 }
+            let page = try Self.parseCounts(data)
+            counts.totals.merge(page.totals) { $1 }
+            counts.series.merge(page.series) { $1 }
         }
         return counts
     }
@@ -260,17 +283,28 @@ struct VercelClient: Sendable {
         aliases.first { !$0.hasSuffix(".vercel.app") } ?? aliases.first
     }
 
-    /// 期間全体の数は summary にある。訪問の無いプロジェクトは載らない
-    static func parseCounts(_ data: Data) throws -> [String: [Metric: Int]] {
+    /// 期間全体の数は summary に、区切りごとの数は series にある。訪問の無いプロジェクトは summary に載らない
+    static func parseCounts(_ data: Data) throws -> (
+        totals: [String: [Metric: Int]], series: [String: [Metric: [Date: Int]]]
+    ) {
         let page = try JSONDecoder().decode(MetricsPage.self, from: data)
-        var counts: [String: [Metric: Int]] = [:]
+        var totals: [String: [Metric: Int]] = [:]
         for row in page.summary {
             for metric in Metric.allCases {
-                counts[row.dimensions.projectId, default: [:]][metric, default: 0] +=
+                totals[row.dimensions.projectId, default: [:]][metric, default: 0] +=
                     (row.values[metric.rawValue] ?? nil) ?? 0
             }
         }
-        return counts
+        let format = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        var series: [String: [Metric: [Date: Int]]] = [:]
+        for row in page.series ?? [] {
+            guard let time = try? format.parse(row.timestamp) else { continue }
+            for metric in Metric.allCases {
+                series[row.dimensions.projectId, default: [:]][metric, default: [:]][time] =
+                    (row.values[metric.rawValue] ?? nil) ?? 0
+            }
+        }
+        return (totals, series)
     }
 }
 
@@ -349,5 +383,19 @@ struct MetricsPage: Decodable {
         let dimensions: Dimensions
         let values: Values
     }
+    struct Point: Decodable {
+        let timestamp: String
+        let dimensions: Row.Dimensions
+        let values: Row.Values
+    }
     let summary: [Row]
+    let series: [Point]?
+}
+
+/// チームに1つの窓で聞いた結果。期間全体の数と、区切りごとの数
+struct Counts: Sendable {
+    /// 聞いたプロジェクト。訪問が無くて結果に載らなかったものも入る
+    let projects: Set<String>
+    var totals: [String: [Metric: Int]] = [:]
+    var series: [String: [Metric: [Date: Int]]] = [:]
 }

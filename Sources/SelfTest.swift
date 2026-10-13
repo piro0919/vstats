@@ -66,11 +66,30 @@ enum SelfTest {
                  "summary":[{"dimensions":{"projectId":"p1"},"values":{"visitors":357,"pageViews":629}},
                             {"dimensions":{"projectId":"p2"},"values":{"visitors":null,"pageViews":null}}]}
                 """
-            let counts = try? VercelClient.parseCounts(Data(json.utf8))
+            let page = try? VercelClient.parseCounts(Data(json.utf8))
+            let counts = page?.totals
             check(counts?["p1"]?[.visitors] == 357, "期間全体の訪問者数は summary から読む")
             check(counts?["p1"]?[.pageViews] == 629, "ページビューも同じ行から読む")
             check(counts?["p2"]?[.visitors] == 0, "値が無ければ 0")
             check(counts?["p3"] == nil, "訪問の無いプロジェクトは載らない")
+            check(
+                page?.series["p1"]?[.pageViews]?[iso("2026-10-06T00:00:00Z")] == 30, "区切りごとの数は series から読む")
+        }
+
+        // 推移の折れ線の点
+        do {
+            // 7日の窓を日本の0時から3時間ずつ区切る。1日目の2区切りと3日目の1区切りにだけ訪問がある
+            let window = DateInterval(start: iso("2026-10-05T15:00:00Z"), end: iso("2026-10-13T15:00:00Z"))
+            let series = [
+                iso("2026-10-05T15:00:00Z"): 2, iso("2026-10-05T18:00:00Z"): 3, iso("2026-10-07T21:00:00Z"): 4,
+            ]
+            let week = VercelClient.trend(series, period: .week, window: window, bucket: 10_800)
+            check(week.count == 8, "7日は暦の8日ぶんの点")
+            check(week == [5, 0, 4, 0, 0, 0, 0, 0], "3時間の区切りを1日ずつに束ねる")
+            let dayWindow = DateInterval(start: iso("2026-10-12T03:00:00Z"), end: iso("2026-10-13T03:00:00Z"))
+            let day = VercelClient.trend(
+                [iso("2026-10-12T04:00:00Z"): 7], period: .day, window: dayWindow, bucket: 3600)
+            check(day.count == 24 && day[1] == 7, "24時間は1時間ずつ")
         }
 
         // 観測の API に送る問い合わせ

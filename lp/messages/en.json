@@ -25,7 +25,7 @@
       },
       {
         "title": "Four periods side by side",
-        "body": "24 hours, 7 days, 30 days and 3 months in one row. Click a column header to sort by it."
+        "body": "24 hours, 7 days, 30 days and 3 months in one row, with a small line chart of the period you sort by. Click a column header to sort by it."
       },
       {
         "title": "Visitors and page views",
