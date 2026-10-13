@@ -104,7 +104,7 @@ struct ColumnHeader: View {
 }
 
 /// プロジェクトの1行。名前とドメイン、4つの期間の訪問者数。
-/// 名前を押すとそのサイトを、数字を押すと Vercel の Analytics の画面を開く。乗っているほうの名前に下線を引く
+/// 名前を押すとそのサイトを、数字を押すとその期間を選んだ Vercel の Analytics の画面を開く。名前に乗ると下線を引く
 struct ProjectRow: View {
     let row: Row
     let sort: Period
@@ -130,23 +130,20 @@ struct ProjectRow: View {
             .help(row.project.siteURL?.absoluteString ?? "")
             .accessibilityLabel(row.project.name)
 
-            Button {
-                NSWorkspace.shared.open(row.project.analyticsURL)
-            } label: {
-                HStack(spacing: Design.columnSpacing) {
-                    ForEach(Period.allCases) { period in
-                        Text(Format.number(row.visitors[period] ?? 0))
-                            .font(Design.numberFont)
-                            .foregroundStyle(period == sort ? .primary : .secondary)
-                            .frame(width: Design.columnWidth, alignment: .trailing)
-                    }
+            ForEach(Period.allCases) { period in
+                Button {
+                    NSWorkspace.shared.open(row.project.analyticsURL(period))
+                } label: {
+                    Text(Format.number(row.visitors[period] ?? 0))
+                        .font(Design.numberFont)
+                        .foregroundStyle(period == sort ? .primary : .secondary)
+                        .frame(width: Design.columnWidth, alignment: .trailing)
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
                 }
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(period.label) \(Format.number(row.visitors[period] ?? 0))")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                Period.allCases.map { "\($0.label) \(Format.number(row.visitors[$0] ?? 0))" }.joined(separator: ", "))
         }
         .padding(.horizontal, Design.rowPadding)
         .frame(height: Design.rowHeight)

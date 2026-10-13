@@ -47,6 +47,12 @@ enum SelfTest {
             check(
                 page?.projects.first?.analyticsURL.absoluteString == "https://vercel.com/kkweb/owler/analytics",
                 "Vercel の Analytics の画面を開く")
+            check(
+                page?.projects.first?.analyticsURL(.day).absoluteString
+                    == "https://vercel.com/kkweb/owler/analytics?period=24h",
+                "数字を押すとその期間を選んだ画面を開く")
+            check(
+                Period.allCases.map(\.dashboardParameter) == ["24h", "7d", "30d", "90d"], "Vercel の画面の期間の値")
             let last = try? VercelClient.parseProjects(
                 Data(#"{"projects":[],"pagination":{"next":null}}"#.utf8), team: team)
             check(last != nil && last?.next == nil, "最後のページでは続きが無い")

@@ -14,9 +14,14 @@ struct Project: Identifiable, Equatable, Codable, Sendable {
         domain.flatMap { URL(string: "https://\($0)") }
     }
 
-    /// 数字を押したときに開く、Vercel の Analytics の画面
+    /// Vercel の Analytics の画面
     var analyticsURL: URL {
         URL(string: "https://vercel.com/\(teamSlug)/\(name)/analytics")!
+    }
+
+    /// 数字を押したときに開く、その期間を選んだ Vercel の Analytics の画面
+    func analyticsURL(_ period: Period) -> URL {
+        URL(string: "\(analyticsURL.absoluteString)?period=\(period.dashboardParameter)")!
     }
 }
 

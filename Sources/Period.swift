@@ -24,6 +24,16 @@ enum Period: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
+    /// Vercel の Analytics 画面の URL で期間を選ぶ値（`?period=7d`）。2026-10-13 に実物で確認
+    var dashboardParameter: String {
+        switch self {
+        case .day: "24h"
+        case .week: "7d"
+        case .month: "30d"
+        case .quarter: "90d"
+        }
+    }
+
     /// 列の見出し。Vercel の画面の「Last 24 Hours」などを短くしたもの。
     /// Vercel の画面にある 12 か月と 24 か月は、観測の API が 92 日前より古い時刻を聞けないので置いていない
     var label: String {
