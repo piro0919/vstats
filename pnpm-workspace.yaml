@@ -1,0 +1,9 @@
+packages:
+  - lp
+
+# ビルド処理を走らせるかどうかを依存ごとに決める。pnpm 11 は書いていないものがあると install を止める。
+# どれも LP の表示には要らないので走らせない
+allowBuilds:
+  '@parcel/watcher': false
+  '@swc/core': false
+  sharp: false

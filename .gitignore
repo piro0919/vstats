@@ -3,3 +3,12 @@ dist/
 build/
 Vendor/
 .DS_Store
+
+# ランディングページ
+node_modules/
+lp/.next/
+lp/tsconfig.tsbuildinfo
+lp/public/sitemap*.xml
+lp/public/robots.txt
+.vercel/
+.playwright-mcp/

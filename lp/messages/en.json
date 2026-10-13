@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "title": "VStats — every Vercel site's visitors in one window",
+    "description": "A Mac app that lists Vercel Web Analytics for all your projects side by side: visitors and page views over 24 hours, 7 days, 30 days and 3 months, with the change from the previous period."
+  },
+  "hero": {
+    "tagline": ["Every Vercel site's visitors,", "in one window."],
+    "lead": [
+      "24 hours, 7 days, 30 days and 3 months side by side,",
+      "with the change from the previous period."
+    ],
+    "points": ["Web Analytics for every project", "Same numbers as the dashboard", "Your token stays in the Keychain"],
+    "download": "Download for free",
+    "requirement": "macOS 14 or later · Apple silicon"
+  },
+  "product": {
+    "title": "Stop opening Analytics one project at a time.",
+    "statement": "Vercel shows Web Analytics one project at a time.",
+    "statementMuted": "With dozens of sites, you never see the whole picture. VStats puts them in one list.",
+    "label": "Features",
+    "items": [
+      {
+        "title": "Every project at once",
+        "body": "Every project with Web Analytics enabled, across all the teams your token can see. Nothing to pick."
+      },
+      {
+        "title": "Four periods side by side",
+        "body": "24 hours, 7 days, 30 days and 3 months in one row. Click a column header to sort by it."
+      },
+      {
+        "title": "Visitors and page views",
+        "body": "Switch between them at the top right. Each number shows the change from the previous period, as the dashboard does."
+      },
+      {
+        "title": "Same numbers as the dashboard",
+        "body": "Periods are counted the way the Vercel dashboard counts them. The 3-month column can come out slightly lower, because the API only reaches back 92 days."
+      },
+      {
+        "title": "One click to the details",
+        "body": "Click a name to open the site. Click a number to open the dashboard for that project and period."
+      },
+      {
+        "title": "Easy on the API",
+        "body": "Each team is counted in a few requests, and the numbers are fetched again only when they are an hour old, or when you press ⌘R."
+      }
+    ]
+  },
+  "install": {
+    "title": "Get started in three steps.",
+    "steps": [
+      {
+        "title": "Install",
+        "body": "Download the DMG and drag VStats into Applications. Homebrew is supported too."
+      },
+      {
+        "title": "First launch",
+        "body": "VStats is not notarized by Apple, so the first launch is blocked. Click Open Anyway in System Settings → Privacy & Security."
+      },
+      {
+        "title": "Paste a token",
+        "body": "Create a token in your Vercel account settings and paste it into the window. Scoping it to one team works too."
+      }
+    ],
+    "note": "The token is kept in the macOS Keychain and only sent to api.vercel.com.",
+    "cta": "Download for free"
+  },
+  "footer": {
+    "source": "Source code",
+    "releases": "Release notes",
+    "privacy": "Privacy"
+  },
+  "language": {
+    "ja": "日本語",
+    "en": "English"
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "updated": "Last updated: October 13, 2026",
+    "intro": "VStats reads Vercel Web Analytics with a token you give it, and shows the numbers on your Mac. That is all it does. The app has no server of its own, no analytics and no account.",
+    "sections": [
+      {
+        "title": "Your Vercel token",
+        "body": "The token you paste is stored in the macOS Keychain on this Mac. It is sent only to api.vercel.com, to list your teams and projects and to count visitors and page views. Remove it from Settings at any time."
+      },
+      {
+        "title": "What it keeps on your Mac",
+        "body": "The last numbers it fetched — project names, domains, visitor and page view counts — are saved in ~/Library/Application Support/VStats so the window opens without waiting. The token is not in that file. Removing the token removes the file."
+      },
+      {
+        "title": "Nothing else leaves your Mac",
+        "body": "Apart from the requests to Vercel above, nothing is collected and nothing is sent anywhere."
+      },
+      {
+        "title": "Update checks go to GitHub",
+        "body": "VStats checks for a new version once at launch. The check fetches one small file from GitHub Releases, so GitHub sees a request with your IP address, like any download. It carries nothing about your projects."
+      },
+      {
+        "title": "No analytics",
+        "body": "There are no crash reports, no usage tracking, no device IDs and no third-party SDKs in the app."
+      },
+      {
+        "title": "About this website",
+        "body": "vstats.kkweb.io, including this page, counts page views with Vercel Web Analytics. It uses no cookies and collects nothing that identifies you. What this page says about collecting nothing is about the app, not about these page view counts."
+      },
+      {
+        "title": "You can check all of this",
+        "body": "VStats is open source under the MIT license. Everything on this page can be checked in the source code. If something looks wrong, open an issue."
+      },
+      {
+        "title": "Changes",
+        "body": "If a future version handles data differently, this page is updated before that version ships."
+      }
+    ],
+    "back": "Back to VStats"
+  }
+}

@@ -1,6 +1,6 @@
 # VStats
 
-開発者向けの設計メモ。
+開発者向けの設計メモ。利用者向けの説明は README.md（英語）にある。コミット・README・CHANGELOG・リリースノートは英語で書く。
 
 Vercel の Web Analytics の訪問者数を、複数のサイトにまたがって1枚の窓で見る Mac アプリ。
 Vercel の画面では Analytics をプロジェクトごとに開き直す必要があり、サイトが何十本もあると全体が見えない。
@@ -100,10 +100,22 @@ Owler と同じ。`./release.sh <版>` でビルド・`--selftest`・DMG・更�
 GitHub Releases に上げる。リリースノートは CHANGELOG.md のその版の節から取る。Sparkle の鍵は兄弟分と共有で、
 秘密鍵はログインキーチェーンにある。署名は自己署名の「Okigae Dev」。
 
+1. CHANGELOG.md の `Unreleased` を `[x.y.z] - YYYY-MM-DD` に直してコミットし、push する
+2. `./release.sh <版>`。最後に DMG の sha256 が出る
+3. Homebrew のタップ `piro0919/homebrew-tap` の `Casks/vstats.rb` の version と sha256 を直す（スキル `mac-release`）
+
+## LP
+
+`lp/` の Next.js。作りは Owler の LP を写した（手本は Vercel のトップページ、日英、Vercel Web Analytics、プライバシーのページ）。
+見出しの横はアプリの窓の写真（`public/shot-{en,ja}.png`）。Owler の絵の代わりに置いた。撮り直したら `page.tsx` の `SHOT` の寸法を合わせる。
+写真は `open -g` で裏に開いた窓を `screencapture -o -l <窓番号>` で撮る。窓番号は画面に出ている窓（`optionOnScreenOnly`）から取る。
+全部の窓から取ると、出していない設定の窓が当たる。OG 画像の文言を変えたら `lp/assets/README.md` の手順で書体を切り直す。
+`pnpm lp:dev` で手元に立つ。CI は lint・型検査・ビルドを回す
+
 ## まだやっていないこと
 
 - 3か月の数を画面とそろえること（API の 92 日の制約で、今は無理）
-- GitHub のリポジトリ、README、LP
+- GitHub のリポジトリ、Vercel への LP の公開、Homebrew のタップ
 
 ## アイコン
 

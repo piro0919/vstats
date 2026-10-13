@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* 手本は Vercel のトップページ。白に近い1色の地と、細い線と、黒い塗りのボタンだけで組む。
+   色はアイコンの棒の緑だけを、印としてわずかに使う */
+@theme {
+  --color-bg: #fafafa;
+  --color-card: #ffffff;
+  --color-ink: #171717;
+  --color-muted: #666666;
+  --color-line: #eaeaea;
+  --color-accent: #3ddc84;
+  --font-sans: var(--font-geist), var(--font-noto-jp), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* 暗い表示の設定なら黒地に。アプリの窓も暗い表示で写しているので、こちらのほうが馴染む */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0a0a0a;
+    --color-card: #111111;
+    --color-ink: #ededed;
+    --color-muted: #a1a1a1;
+    --color-line: #262626;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+
+  /* 日本語を語のまとまりで折り返す。これが無いと見出しが「を、」で割れる */
+  word-break: auto-phrase;
+}
+
+/* 大きな見出し。字間を詰めて、Vercel の見出しと同じ締まった塊にする */
+.display {
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
