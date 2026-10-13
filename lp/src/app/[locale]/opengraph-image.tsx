@@ -14,10 +14,10 @@ export function generateStaticParams(): { locale: string }[] {
 }
 
 /* 出るのは kk-web の一覧で176px、X のカードで500px 前後。
-   その大きさで残るのはアイコンと名前と1行だけ。サイトと同じく白に近い地に黒い字 */
-const BG = "#fafafa";
-const INK = "#171717";
-const MUTED = "#666666";
+   その大きさで残るのはアイコンと名前と1行だけ。サイトの暗い表示と同じ黒地に明るい字（白地だとサイトと食い違う、と本人に言われた） */
+const BG = "#0a0a0a";
+const INK = "#ededed";
+const MUTED = "#a1a1a1";
 
 export default async function OgImage({
   params,
@@ -41,7 +41,7 @@ export default async function OgImage({
         background: BG,
         /* アイコンの後ろに、アイコンの棒と同じ緑の光の輪を置く */
         backgroundImage:
-          "radial-gradient(28% 50% at 30% 50%, rgba(61,220,132,0.22) 0%, rgba(250,250,250,0) 100%)",
+          "radial-gradient(28% 50% at 30% 50%, rgba(61,220,132,0.28) 0%, rgba(10,10,10,0) 100%)",
         display: "flex",
         gap: 56,
         height: "100%",
