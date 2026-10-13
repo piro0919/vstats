@@ -1,0 +1,5 @@
+VStats.app/
+dist/
+build/
+Vendor/
+.DS_Store
