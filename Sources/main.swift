@@ -84,15 +84,7 @@ if CommandLine.arguments.dropFirst().first == "--dump" {
     let done = DispatchSemaphore(value: 0)
     Task.detached {
         do {
-            let client = VercelClient(token: token)
-            let now = Date()
-            let rows = try await concurrentMap(try await client.projects(), limit: 8) { project in
-                Row(
-                    project: project,
-                    visitors: try await client.visitors(project, in: period.current(now: now)),
-                    previous: try await client.visitors(project, in: period.previous(now: now)))
-            }
-            for row in Row.sorted(rows) {
+            for row in try await VercelClient(token: token).rows(period: period) {
                 print("\(row.project.teamSlug)/\(row.project.name)\t\(row.visitors)\t\(row.delta)")
             }
         } catch {

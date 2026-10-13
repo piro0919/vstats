@@ -22,15 +22,26 @@ Vercel の画面では Analytics をプロジェクトごとに開き直す必�
   プロジェクトの削除までできる強さがあるので、ファイルや UserDefaults には置かない
 - **Vercel の MCP コネクタでは Web Analytics が 404 になる**（2026-10-13 に `count_pageviews` と `aggregate_pageviews` で確認。
   同じ条件の `vercel api` は 200）。なのでアプリは REST API を直接叩く
-- 訪問者数は `/v1/query/web-analytics/visits/aggregate` に `by=environment` を付けて取る。`visits/count` は
-  since と until を**日単位（UTC）に丸める**ので、24時間の窓が切れない。aggregate は1時間単位に丸めるので、
-  Vercel の画面と同じ「今に向かう窓」になる。既定で本番の環境だけに絞られ、行は多くても1つ。訪問が無ければ空の配列
+- 訪問者数は観測の API `POST /metrics/v1?teamId=…` で、**チームごとに1回**で取る（`VercelClient.metricsQuery`）。
+  形は `vercel metrics vercel.analytics.page_view.count --all --group-by projectId --aggregation unique/visitorId`
+  が送るものを写した（CLI の `createCanonicalMetricsRequest`）。期間全体の数は応答の `summary` にあり、
+  訪問の無いプロジェクトは載らない。`bucketSeconds` は 86400 まで、`seriesSelection.limit` は 500 まで。
+  集計は `aggregation: "unique"` に `dimensions: ["visitorId"]`。`"unique/visitorId"` と書くと 400
+- **Web Analytics の API（`/v1/query/web-analytics/*`）は使わない。** プロジェクトごとにしか聞けず、
+  **1時間に 400 回まで**（`x-ratelimit-limit`）。枠はトークンではなくアカウントかチームで数えるらしく、
+  新しいトークンでも残りが 14 だった。50 件 × 今と前の2回で1回の表示が 100 回になり、初版は4回開くと止まった（2026-10-13）。
+  なお `visits/count` は since と until を日単位（UTC）に丸める
+- 窓の両端は1時間に揃える（始まりは切り下げ、終わりは切り上げ）
+- 今の期間の数は Web Analytics の API とほぼ一致した（koidamashii 353 と 352、kk-web 127 と 127）。
+  前の期間との差はずれた（koidamashii +213 と +228）。どちらが Vercel の画面に合うかは未照合
 - Web Analytics が有効かは、プロジェクトの `webAnalytics` の `enabledAt` と `disabledAt` の**後に起きたほう**で決める。
   切って入れ直すと両方が残り、`disabledAt` があるだけで無効と読むと間違える（kk-web がそう）
 - プロジェクト一覧の続きは `until=<pagination.next>` で取る。`from` は境目の1件が前のページと重なる
 - トークンをチームを絞って作ると、ほかのチームの一覧は 403 になる。そのチームは黙って飛ばす。
   トークンそのものが断られたかは `/v2/teams` の 401/403 で見る
-- 50 件で問い合わせは 100 回。同時に 8 本まで流し、429 は待って聞き直す（`concurrentMap`、`VercelClient.get`）。手元で約7秒
+- 1回の表示の問い合わせは、チーム一覧1回・プロジェクト一覧がチームごと・訪問者がチームごとに2回。kk-web だけなら5回、約2.6秒。
+  429 は待って聞き直す（`VercelClient.send`）。環境変数 `VSTATS_DIAG` で、応答の状態と回数の上限、失敗の中身を標準エラーに出す
+- 自己署名のアプリは、作り直すたびにキーチェーンの許可を求められる（2026-10-13、本人の画面で出た）
 
 ## Design rules
 

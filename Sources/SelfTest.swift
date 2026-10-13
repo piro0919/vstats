@@ -52,9 +52,27 @@ enum SelfTest {
 
         // 訪問者数
         do {
-            let one = #"{"data":[{"environment":"production","visitors":120,"pageviews":459}]}"#
-            check(VercelClient.parseVisitors(Data(one.utf8)) == 120, "本番の訪問者数を読む")
-            check(VercelClient.parseVisitors(Data(#"{"data":[]}"#.utf8)) == 0, "訪問が無ければ 0")
+            let json = """
+                {"series":[{"timestamp":"2026-10-06T00:00:00.000Z","dimensions":{"projectId":"p1"},"values":{"value":15}}],
+                 "summary":[{"dimensions":{"projectId":"p1"},"values":{"value":353}},
+                            {"dimensions":{"projectId":"p2"},"values":{"value":null}}]}
+                """
+            let visitors = try? VercelClient.parseVisitors(Data(json.utf8))
+            check(visitors?["p1"] == 353, "期間全体の数は summary から読む")
+            check(visitors?["p2"] == 0, "値が無ければ 0")
+            check(visitors?["p3"] == nil, "訪問の無いプロジェクトは載らない")
+        }
+
+        // 観測の API に送る問い合わせ
+        do {
+            // 2026-10-13 02:34:56 UTC
+            let end = Date(timeIntervalSince1970: 1_791_858_896)
+            let query = VercelClient.metricsQuery(
+                owner: "team_a", interval: DateInterval(start: end.addingTimeInterval(-86_400), end: end))
+            check(query.timeRange.start == "2026-10-12T02:00:00.000Z", "始まりは1時間に切り下げる")
+            check(query.timeRange.end == "2026-10-13T03:00:00.000Z", "終わりは1時間に切り上げる")
+            check(query.metrics["value"]?.dimensions == ["visitorId"], "訪問者は visitorId の数で数える")
+            check(query.filter == "environment:production", "本番だけを数える")
         }
 
         // 期間

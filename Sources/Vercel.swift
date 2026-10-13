@@ -90,32 +90,85 @@ struct VercelClient: Sendable {
 
     // MARK: - 訪問者
 
-    /// 期間の訪問者数。本番の環境だけを数える（Vercel の画面の既定と同じ）。
-    /// visits/count は日単位に丸めるので、時間単位で窓を切れる aggregate を環境で分けて使う
-    func visitors(_ project: Project, in interval: DateInterval) async throws -> Int {
-        let query = [
-            URLQueryItem(name: "teamId", value: project.teamID),
-            URLQueryItem(name: "projectId", value: project.id),
-            URLQueryItem(name: "since", value: String(Int64(interval.start.timeIntervalSince1970 * 1000))),
-            URLQueryItem(name: "until", value: String(Int64(interval.end.timeIntervalSince1970 * 1000))),
-            URLQueryItem(name: "by", value: "environment"),
-        ]
-        return Self.parseVisitors(try await get("/v1/query/web-analytics/visits/aggregate", query))
+    /// 一覧の行。チームごとに今の期間と前の期間を1回ずつ聞く
+    func rows(period: Period, now: Date = Date()) async throws -> [Row] {
+        let projects = try await projects()
+        let teams = Dictionary(grouping: projects, by: \.teamID).values.compactMap(\.first)
+            .map { Team(id: $0.teamID, slug: $0.teamSlug) }
+        var current: [String: Int] = [:]
+        var previous: [String: Int] = [:]
+        for team in teams {
+            async let latest = visitors(team: team, in: period.current(now: now))
+            async let before = visitors(team: team, in: period.previous(now: now))
+            current.merge(try await latest) { $1 }
+            previous.merge(try await before) { $1 }
+        }
+        return Row.sorted(
+            projects.map { Row(project: $0, visitors: current[$0.id] ?? 0, previous: previous[$0.id] ?? 0) })
+    }
+
+    /// チームの全プロジェクトの、期間の訪問者数（プロジェクトの id ごと）。本番の環境だけを数える。
+    /// Web Analytics の API（/v1/query/web-analytics）はプロジェクトごとにしか聞けず、1時間に 400 回までしか
+    /// 聞けない。50 件で今と前の期間を聞くと1回の表示で 100 回になり、4回開くと止まった。
+    /// `vercel metrics --all --group-by projectId` が使う観測の API なら、チーム全体を1回で数えられる
+    func visitors(team: Team, in interval: DateInterval) async throws -> [String: Int] {
+        let body = try JSONEncoder().encode(Self.metricsQuery(owner: team.id, interval: interval))
+        let data = try await send("/metrics/v1", [URLQueryItem(name: "teamId", value: team.id)], body: body)
+        return try Self.parseVisitors(data)
+    }
+
+    /// 窓の両端は1時間に揃える。Web Analytics の API が丸めていたのと同じ揃え方
+    static func metricsQuery(owner: String, interval: DateInterval) -> MetricsQuery {
+        let hour: TimeInterval = 3600
+        let start = (interval.start.timeIntervalSince1970 / hour).rounded(.down) * hour
+        let end = (interval.end.timeIntervalSince1970 / hour).rounded(.up) * hour
+        let format = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        return MetricsQuery(
+            scope: .init(ownerId: owner),
+            timeRange: .init(
+                start: Date(timeIntervalSince1970: start).formatted(format),
+                end: Date(timeIntervalSince1970: end).formatted(format)),
+            // 区切りは最大で1日。期間全体の数は区切りごとの数とは別に summary に入る
+            bucketSeconds: 86_400,
+            groupBy: ["projectId"],
+            filter: "environment:production",
+            metrics: [
+                "value": .init(
+                    metric: "vercel.analytics.page_view.count", aggregation: "unique", dimensions: ["visitorId"])
+            ],
+            outputs: ["value"],
+            // 系列（プロジェクト）の数の上限。API が受け付けるのは 500 まで
+            seriesSelection: .init(limit: 500, mode: "exact", rankBy: [.init(metric: "value", direction: "desc")]))
     }
 
     // MARK: - 通信
 
     private func get(_ path: String, _ query: [URLQueryItem]) async throws -> Data {
+        try await send(path, query, body: nil)
+    }
+
+    private func send(_ path: String, _ query: [URLQueryItem], body: Data?) async throws -> Data {
         var components = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         components.queryItems = query
         var request = URLRequest(url: components.url!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        // 一度に何十件も聞くので、混んでいると 429 が返る。少し待って聞き直す
+        if let body {
+            request.httpMethod = "POST"
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        // 混んでいると 429 が返る。少し待って聞き直す
         for attempt in 0..<4 {
             let (data, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let http = response as? HTTPURLResponse
+            let status = http?.statusCode ?? 0
+            if ProcessInfo.processInfo.environment["VSTATS_DIAG"] != nil, let http {
+                let limits = http.allHeaderFields.filter { "\($0.key)".lowercased().hasPrefix("x-ratelimit") }
+                FileHandle.standardError.write(Data("\(status) \(path) \(limits)\n".utf8))
+                if status >= 400 { FileHandle.standardError.write(data + Data("\n".utf8)) }
+            }
             if status == 429, attempt < 3 {
-                let wait = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+                let wait = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
                 try await Task.sleep(for: .seconds(min(wait ?? Double(attempt + 1), 10)))
                 continue
             }
@@ -149,10 +202,14 @@ struct VercelClient: Sendable {
         aliases.first { !$0.hasSuffix(".vercel.app") } ?? aliases.first
     }
 
-    /// 本番だけに絞った集計なので、行は多くても1つ。訪問が無い期間は空の配列が返る
-    static func parseVisitors(_ data: Data) -> Int {
-        guard let page = try? JSONDecoder().decode(AggregatePage.self, from: data) else { return 0 }
-        return page.data.reduce(0) { $0 + $1.visitors }
+    /// 期間全体の数は summary にある。訪問の無いプロジェクトは載らない
+    static func parseVisitors(_ data: Data) throws -> [String: Int] {
+        let page = try JSONDecoder().decode(MetricsPage.self, from: data)
+        var visitors: [String: Int] = [:]
+        for row in page.summary {
+            visitors[row.dimensions.projectId, default: 0] += row.values.value ?? 0
+        }
+        return visitors
     }
 }
 
@@ -193,31 +250,43 @@ struct ProjectsPage: Decodable {
     let pagination: Pagination?
 }
 
-struct AggregatePage: Decodable {
-    struct Row: Decodable { let visitors: Int }
-    let data: [Row]
+/// 観測の API（/metrics/v1）に送る問い合わせ。形は Vercel CLI の `vercel metrics` が送るものを写した
+struct MetricsQuery: Encodable, Equatable {
+    struct Scope: Encodable, Equatable { let ownerId: String }
+    struct TimeRange: Encodable, Equatable {
+        let start: String
+        let end: String
+    }
+    struct Metric: Encodable, Equatable {
+        let metric: String
+        let aggregation: String
+        let dimensions: [String]
+    }
+    struct Rank: Encodable, Equatable {
+        let metric: String
+        let direction: String
+    }
+    struct Selection: Encodable, Equatable {
+        let limit: Int
+        let mode: String
+        let rankBy: [Rank]
+    }
+    let scope: Scope
+    let timeRange: TimeRange
+    let bucketSeconds: Int
+    let groupBy: [String]
+    let filter: String
+    let metrics: [String: Metric]
+    let outputs: [String]
+    let seriesSelection: Selection
 }
 
-/// 何十件もの問い合わせを、同時に投げすぎないように流す
-func concurrentMap<T: Sendable, R: Sendable>(
-    _ items: [T], limit: Int, _ transform: @escaping @Sendable (T) async throws -> R
-) async throws -> [R] {
-    try await withThrowingTaskGroup(of: (Int, R).self) { group in
-        var results = [R?](repeating: nil, count: items.count)
-        var next = 0
-        for _ in 0..<min(limit, items.count) {
-            let index = next
-            group.addTask { (index, try await transform(items[index])) }
-            next += 1
-        }
-        while let (index, result) = try await group.next() {
-            results[index] = result
-            if next < items.count {
-                let index = next
-                group.addTask { (index, try await transform(items[index])) }
-                next += 1
-            }
-        }
-        return results.map { $0! }
+struct MetricsPage: Decodable {
+    struct Row: Decodable {
+        struct Dimensions: Decodable { let projectId: String }
+        struct Values: Decodable { let value: Int? }
+        let dimensions: Dimensions
+        let values: Values
     }
+    let summary: [Row]
 }

@@ -68,16 +68,9 @@ final class Model: ObservableObject {
         let period = period
         task = Task {
             do {
-                let client = VercelClient(token: token)
-                let projects = try await client.projects()
-                let now = Date()
-                let rows = try await concurrentMap(projects, limit: 8) { project in
-                    async let visitors = client.visitors(project, in: period.current(now: now))
-                    async let previous = client.visitors(project, in: period.previous(now: now))
-                    return Row(project: project, visitors: try await visitors, previous: try await previous)
-                }
+                let rows = try await VercelClient(token: token).rows(period: period)
                 try Task.checkCancellation()
-                self.rows = Row.sorted(rows)
+                self.rows = rows
                 self.state = .loaded
             } catch VercelError.invalidToken {
                 self.rows = []
