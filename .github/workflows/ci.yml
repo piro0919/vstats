@@ -34,7 +34,7 @@ jobs:
       # pnpm 11 は node:sqlite を使うので Node 22 以上が要る
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.22.0
+          node-version: 24.22.1
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter vstats-lp lint
