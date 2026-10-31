@@ -1,7 +1,7 @@
 {
   "name": "vstats",
   "private": true,
-  "packageManager": "pnpm@11.28.9",
+  "packageManager": "pnpm@12.16.1",
   "scripts": {
     "lp:dev": "pnpm --filter vstats-lp dev",
     "lp:build": "pnpm --filter vstats-lp build"
