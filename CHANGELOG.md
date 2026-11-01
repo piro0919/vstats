@@ -4,6 +4,18 @@ Notable changes to VStats. `release.sh` publishes the section for the version be
 its release notes, and stops if that section is missing or empty — so before releasing, rename
 `Unreleased` to `[x.y.z] - YYYY-MM-DD` and commit.
 
+## [0.2.0] - 2026-11-01
+
+### Added
+
+- Sort the list by project name by clicking the Name header.
+
+### Fixed
+
+- A project's name now opens its custom domain. Many projects opened their `vercel.app` address
+  instead, because the custom domain was missing from the production aliases the project list
+  returns.
+
 ## [0.1.0] - 2026-10-13
 
 ### Added
