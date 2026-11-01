@@ -86,31 +86,38 @@ struct Message: View {
     }
 }
 
-/// 列の見出し。期間の名前を並べ、押すとその期間の数で並べ替える。並べている列だけ濃く、下向きの印を付ける
+/// 列の見出し。左に名前、右に期間の名前を並べ、押すとその順で並べ替える。並べている列だけ濃く、下向きの印を付ける
 struct ColumnHeader: View {
-    @Binding var sort: Period
+    @Binding var sort: Sort
 
     var body: some View {
         HStack(spacing: Design.columnSpacing) {
-            Spacer(minLength: 0)
+            title(Strings.name, for: .name)
+                .frame(maxWidth: .infinity, alignment: .leading)
             ForEach(Period.allCases) { period in
-                Button {
-                    sort = period
-                } label: {
-                    HStack(spacing: 2) {
-                        Text(period.label)
-                        if period == sort { Image(systemName: "chevron.down").font(.caption2) }
-                    }
+                title(period.label, for: .period(period))
                     .frame(width: Design.columnWidth, alignment: .trailing)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .font(.callout)
-                .foregroundStyle(period == sort ? .primary : .secondary)
             }
         }
         .padding(.horizontal, Design.rowPadding)
         .frame(height: Design.headerHeight)
+    }
+
+    private func title(_ text: String, for key: Sort) -> some View {
+        Button {
+            sort = key
+        } label: {
+            HStack(spacing: 2) {
+                Text(text)
+                if key == sort { Image(systemName: "chevron.down").font(.caption2) }
+            }
+            // 字の上だけでなく、列の幅と見出しの高さ全体を押せるようにする
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: key == .name ? .leading : .trailing)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .font(.callout)
+        .foregroundStyle(key == sort ? .primary : .secondary)
     }
 }
 
@@ -118,7 +125,7 @@ struct ColumnHeader: View {
 /// 名前を押すとそのサイトを、数字を押すとその期間を選んだ Vercel の Analytics の画面を開く。名前に乗ると下線を引く
 struct ProjectRow: View {
     let row: Row
-    let sort: Period
+    let sort: Sort
     let metric: Metric
     @State private var hovering = false
     @State private var hoveringName = false
@@ -149,7 +156,7 @@ struct ProjectRow: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(Format.number(row.count(metric, period)))
                             .font(Design.numberFont)
-                            .foregroundStyle(period == sort ? .primary : .secondary)
+                            .foregroundStyle(.period(period) == sort ? .primary : .secondary)
                         // 前の期間が取れない3か月や、前が 0 のときも行の高さをそろえるため、空でも置く
                         Text(row.change(metric, period).map(Format.change) ?? " ")
                             .font(Design.changeFont)

@@ -18,12 +18,16 @@ struct Row: Identifiable, Equatable, Codable, Sendable {
         return Int((Double(count(metric, period) - before) / Double(before) * 100).rounded())
     }
 
-    /// 選んだ値と期間の多い順。同じ数なら名前の順
-    static func sorted(_ rows: [Row], by period: Period, _ metric: Metric) -> [Row] {
+    /// 名前で並べるときは名前の順。期間で並べるときは選んだ値と期間の多い順で、同じ数なら名前の順
+    static func sorted(_ rows: [Row], by sort: Sort, _ metric: Metric) -> [Row] {
         rows.sorted {
+            // 別のチームに同じ名前があると、取り直すたびに入れ替わらないよう id で決める
+            let order = $0.project.name.localizedStandardCompare($1.project.name)
+            let byName = order == .orderedSame ? $0.project.id < $1.project.id : order == .orderedAscending
+            guard case .period(let period) = sort else { return byName }
             let a = $0.count(metric, period)
             let b = $1.count(metric, period)
-            return a != b ? a > b : $0.project.name.localizedStandardCompare($1.project.name) == .orderedAscending
+            return a != b ? a > b : byName
         }
     }
 }
@@ -41,8 +45,8 @@ final class Model: ObservableObject {
 
     @Published private(set) var snapshot = Snapshot.load()
     @Published private(set) var state: State = .needsToken(rejected: false)
-    @Published var sort = Period.sorted {
-        didSet { Period.sorted = sort }
+    @Published var sort = Sort.saved {
+        didSet { Sort.saved = sort }
     }
     @Published var metric = Metric.chosen {
         didSet { Metric.chosen = metric }

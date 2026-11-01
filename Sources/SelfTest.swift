@@ -26,6 +26,27 @@ enum SelfTest {
                 "独自ドメインを先に選ぶ")
             check(VercelClient.domain(["a-kkweb.vercel.app"]) == "a-kkweb.vercel.app", "無ければ vercel.app")
             check(VercelClient.domain([]) == nil, "別名が無ければ出さない")
+
+            // 付けたドメインの一覧から選ぶ。next-subrouter・kk-web・spatto の実物の形
+            func pick(_ items: String) -> String? {
+                try? VercelClient.parseDomains(Data(#"{"domains":[\#(items)],"pagination":{}}"#.utf8))
+            }
+            check(
+                pick(#"{"name":"siritori-timer.kkweb.io","redirect":null,"gitBranch":null,"verified":true}"#)
+                    == "siritori-timer.kkweb.io", "付けたドメインを選ぶ")
+            check(
+                pick(
+                    #"{"name":"blog.next-subrouter.kkweb.io","verified":true},{"name":"next-subrouter.kkweb.io","verified":true}"#
+                ) == "next-subrouter.kkweb.io", "複数あれば階層の浅いもの")
+            check(
+                pick(
+                    #"{"name":"a.kkweb.io","redirect":"b.kkweb.io","verified":true},{"name":"b.kkweb.io","verified":true}"#
+                )
+                    == "b.kkweb.io", "転送するだけのものは選ばない")
+            check(
+                pick(
+                    #"{"name":"a.kkweb.io","gitBranch":"dev","verified":true},{"name":"b.kkweb.io","verified":false},{"name":"x.vercel.app"}"#
+                ) == nil, "ブランチ用・未確認・vercel.app は選ばない")
         }
 
         // プロジェクトの一覧
@@ -147,11 +168,26 @@ enum SelfTest {
                 row("b", week: 3, day: 9), row("c", week: 10), row("a", week: 3, views: 50), row("d", week: 0, day: 1),
             ]
             check(
-                Row.sorted(rows, by: .week, .visitors).map(\.project.name) == ["c", "a", "b", "d"],
+                Row.sorted(rows, by: .period(.week), .visitors).map(\.project.name) == ["c", "a", "b", "d"],
                 "選んだ期間の多い順、同じなら名前の順")
             check(
-                Row.sorted(rows, by: .day, .visitors).map(\.project.name) == ["b", "d", "a", "c"], "期間を変えると並びも変わる")
-            check(Row.sorted(rows, by: .week, .pageViews).first?.project.name == "a", "ページビューでも並べられる")
+                Row.sorted(rows, by: .period(.day), .visitors).map(\.project.name) == ["b", "d", "a", "c"],
+                "期間を変えると並びも変わる")
+            check(Row.sorted(rows, by: .period(.week), .pageViews).first?.project.name == "a", "ページビューでも並べられる")
+            check(Row.sorted(rows, by: .name, .visitors).map(\.project.name) == ["a", "b", "c", "d"], "名前の順にも並べられる")
+            let numbered = ["app10", "App2", "app1"].map { row($0, week: 0) }
+            check(
+                Row.sorted(numbered, by: .name, .visitors).map(\.project.name) == ["app1", "App2", "app10"],
+                "名前は大文字小文字を区別せず、数字は数として並べる")
+            func web(_ id: String) -> Row {
+                Row(
+                    project: Project(id: id, name: "web", teamID: id, teamSlug: id, domain: nil), counts: [:],
+                    previous: [:])
+            }
+            check(
+                Row.sorted([web("2"), web("1")], by: .name, .visitors).map(\.project.id) == ["1", "2"]
+                    && Row.sorted([web("1"), web("2")], by: .name, .visitors).map(\.project.id) == ["1", "2"],
+                "別のチームに同じ名前があっても、並びは入れ替わらない")
 
             // koidamashii の7日は、画面で 357 人・+136%（前の期間は 151 人）だった
             let koi = Row(
@@ -169,6 +205,10 @@ enum SelfTest {
             let snapshot = Snapshot(fetchedAt: fetched, rows: [])
             check(!snapshot.isStale(now: fetched.addingTimeInterval(59 * 60)), "1時間たつまでは取り直さない")
             check(snapshot.isStale(now: fetched.addingTimeInterval(60 * 60)), "1時間たったら取り直す")
+            let old = try? JSONDecoder().decode(Snapshot.self, from: Data(#"{"fetchedAt":0,"rows":[]}"#.utf8))
+            check(
+                old?.isStale(now: Date(timeIntervalSinceReferenceDate: 60)) == true,
+                "前の版の取り方で取ったものは、1時間たっていなくても取り直す")
 
             let row = Row(
                 project: Project(id: "p", name: "kk-web", teamID: "t", teamSlug: "kkweb", domain: "kkweb.io"),

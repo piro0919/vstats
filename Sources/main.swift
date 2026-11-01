@@ -87,15 +87,17 @@ if CommandLine.arguments.dropFirst().first == "--dump" {
             let columns = Metric.allCases.flatMap { metric in
                 Period.allCases.map { "\(metric.rawValue).\($0.rawValue)" }
             }
-            print((["project"] + columns).joined(separator: "\t"))
-            for row in Row.sorted(try await VercelClient(token: token).rows(), by: .week, .visitors) {
+            print((["project", "domain"] + columns).joined(separator: "\t"))
+            for row in Row.sorted(try await VercelClient(token: token).rows(), by: .period(.week), .visitors) {
                 let cells = Metric.allCases.flatMap { metric in
                     Period.allCases.map { period in
                         "\(row.count(metric, period))"
                             + (row.change(metric, period).map { " (\(Format.change($0)))" } ?? "")
                     }
                 }
-                print(([row.project.teamSlug + "/" + row.project.name] + cells).joined(separator: "\t"))
+                print(
+                    ([row.project.teamSlug + "/" + row.project.name, row.project.domain ?? ""] + cells).joined(
+                        separator: "\t"))
             }
         } catch {
             print("error: \(error)")

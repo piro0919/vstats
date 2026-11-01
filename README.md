@@ -10,8 +10,9 @@ and 3 months side by side.
 
 Switch between **Visitors** and **Page Views** at the top right. Each number shows
 the change from the previous period, the way the dashboard does. Click a column
-header to sort by that period, a project's name to open the site, and a number to
-open the Vercel dashboard for that project and period.
+header to sort by that period, or the Name header to sort by name. Click a
+project's name to open the site, and a number to open the Vercel dashboard for
+that project and period.
 
 There is a page for it at [vstats.kkweb.io](https://vstats.kkweb.io).
 

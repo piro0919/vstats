@@ -95,7 +95,36 @@ struct VercelClient: Sendable {
             projects += page.projects
             until = page.next
         } while until != nil
-        return projects
+        return await withDomains(projects, team: team)
+    }
+
+    /// 本番の別名（targets.production.alias）に独自ドメインが無いプロジェクトは、付けたドメインの一覧から選び直す。
+    /// 別名に vercel.app しか載らないのに独自ドメインを持つプロジェクトがある（2026-11-01 の kkweb で約40件。siritori-timer など）。
+    /// 聞けなかったときは別名のままにする
+    private func withDomains(_ projects: [Project], team: Team) async -> [Project] {
+        await withTaskGroup(of: (Int, String?).self) { group in
+            for (index, project) in projects.enumerated() where project.domain.map(Self.isVercelApp) ?? true {
+                group.addTask {
+                    let data = try? await get(
+                        "/v9/projects/\(project.id)/domains",
+                        [
+                            URLQueryItem(name: "teamId", value: team.id),
+                            URLQueryItem(name: "production", value: "true"),
+                            URLQueryItem(name: "limit", value: "100"),
+                        ])
+                    return (index, data.flatMap { try? Self.parseDomains($0) })
+                }
+            }
+            var result = projects
+            for await (index, domain) in group {
+                guard let domain else { continue }
+                let project = result[index]
+                result[index] = Project(
+                    id: project.id, name: project.name, teamID: project.teamID, teamSlug: project.teamSlug,
+                    domain: domain)
+            }
+            return result
+        }
     }
 
     // MARK: - 訪問者
@@ -257,7 +286,24 @@ struct VercelClient: Sendable {
 
     /// 本番の別名のうち、独自ドメインを先に選ぶ
     static func domain(_ aliases: [String]) -> String? {
-        aliases.first { !$0.hasSuffix(".vercel.app") } ?? aliases.first
+        aliases.first { !isVercelApp($0) } ?? aliases.first
+    }
+
+    static func isVercelApp(_ domain: String) -> Bool { domain.hasSuffix(".vercel.app") }
+
+    /// プロジェクトに付けた本番のドメインから、サイトとして開くものを1つ選ぶ。
+    /// 転送するだけのもの（www など）、ブランチ用、確認の済んでいないもの、vercel.app は除く。
+    /// 残りが複数なら階層の浅いもの（blog.next-subrouter.kkweb.io より next-subrouter.kkweb.io）。無ければ nil
+    static func parseDomains(_ data: Data) throws -> String? {
+        let page = try JSONDecoder().decode(DomainsPage.self, from: data)
+        return page.domains
+            .filter { $0.redirect == nil && $0.gitBranch == nil && $0.verified != false && !isVercelApp($0.name) }
+            .map(\.name)
+            .min {
+                let a = $0.split(separator: ".").count
+                let b = $1.split(separator: ".").count
+                return a != b ? a < b : $0 < $1
+            }
     }
 
     /// 期間全体の数は summary にある。訪問の無いプロジェクトは載らない
@@ -290,6 +336,16 @@ struct TeamsPage: Decodable {
     }
     let teams: [Item]
     let pagination: Pagination?
+}
+
+struct DomainsPage: Decodable {
+    struct Item: Decodable {
+        let name: String
+        let redirect: String?
+        let gitBranch: String?
+        let verified: Bool?
+    }
+    let domains: [Item]
 }
 
 struct ProjectsPage: Decodable {

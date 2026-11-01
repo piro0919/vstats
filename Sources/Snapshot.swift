@@ -5,13 +5,18 @@ import Foundation
 struct Snapshot: Codable, Equatable {
     let fetchedAt: Date
     let rows: [Row]
+    /// 取り方の版。取り方を変えたら上げ、更新した直後に前の版の取り方で取った数字を出し続けないようにする。
+    /// 0.1.0 のものには無い。2 はドメインを付けたドメインの一覧から選び直すようにした版
+    var format: Int? = Self.currentFormat
+
+    static let currentFormat = 2
 
     /// これより前に取ったものは古いとみなし、開いたときに取り直す。
     /// 24時間の列が1時間単位で区切られるので、それより短く取り直しても数はほとんど変わらない
     static let lifetime: TimeInterval = 3600
 
     func isStale(now: Date = Date()) -> Bool {
-        now.timeIntervalSince(fetchedAt) >= Self.lifetime
+        format != Self.currentFormat || now.timeIntervalSince(fetchedAt) >= Self.lifetime
     }
 
     private static var url: URL {

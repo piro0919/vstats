@@ -7,14 +7,6 @@ enum Period: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var id: String { rawValue }
 
-    private static let sortKey = "sort"
-
-    /// 一覧をどの期間の数で並べるか。列の見出しを押して変える
-    static var sorted: Period {
-        get { UserDefaults.standard.string(forKey: sortKey).flatMap(Period.init(rawValue:)) ?? .week }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: sortKey) }
-    }
-
     var days: Int {
         switch self {
         case .day: 1
